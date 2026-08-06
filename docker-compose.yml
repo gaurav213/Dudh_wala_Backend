@@ -1,0 +1,58 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: doodh-khata-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: doodh_khata
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d doodh_khata']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: doodh-khata-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_PREFIX: api
+      API_VERSION: 1
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/doodh_khata
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change_me_access}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change_me_refresh}
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 30d
+      BCRYPT_ROUNDS: 12
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      DEFAULT_TIMEZONE: Asia/Kolkata
+      LOG_LEVEL: info
+    ports:
+      - '3000:3000'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '-qO-',
+          'http://localhost:3000/api/v1/health',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
