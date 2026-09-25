@@ -93,7 +93,32 @@ class EnvironmentVariables {
   @IsString()
   @IsOptional()
   AUTO_APPROVE_FARMS = 'false';
+
+  /** Minutes after deliveredAt during which delivery staff may edit. */
+  @Transform(({ value }) => toInt(value, 60))
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10080)
+  @IsOptional()
+  DELIVERY_EDIT_WINDOW_MINUTES = 60;
+
+  /** Firebase Cloud Messaging — optional; push skipped when unset */
+  @IsString()
+  @IsOptional()
+  FCM_PROJECT_ID?: string;
+
+  @IsString()
+  @IsOptional()
+  FCM_CLIENT_EMAIL?: string;
+
+  /** PEM private key; use \n escapes in .env */
+  @IsString()
+  @IsOptional()
+  FCM_PRIVATE_KEY?: string;
 }
+
+const WEAK_SECRET = /change_me|replace_with|replace_me|secret|password|example/i;
 
 export function validateEnv(config: Record<string, unknown>) {
   const validated = plainToInstance(EnvironmentVariables, config, {
@@ -107,5 +132,38 @@ export function validateEnv(config: Record<string, unknown>) {
       .join('; ');
     throw new Error(`Environment validation failed: ${messages}`);
   }
+
+  if (validated.NODE_ENV === NodeEnv.Production) {
+    const blockers: string[] = [];
+    if (!config.CORS_ORIGINS || String(config.CORS_ORIGINS).trim() === '') {
+      blockers.push(
+        'CORS_ORIGINS must be set explicitly in production (comma-separated https origins)',
+      );
+    } else if (/localhost|127\.0\.0\.1/i.test(validated.CORS_ORIGINS)) {
+      blockers.push(
+        'CORS_ORIGINS must not include localhost in production',
+      );
+    }
+    for (const [name, value] of [
+      ['JWT_ACCESS_SECRET', validated.JWT_ACCESS_SECRET],
+      ['JWT_REFRESH_SECRET', validated.JWT_REFRESH_SECRET],
+    ] as const) {
+      if (value.length < 32) {
+        blockers.push(`${name} must be at least 32 characters`);
+      }
+      if (WEAK_SECRET.test(value)) {
+        blockers.push(`${name} looks like a placeholder — generate a real secret`);
+      }
+    }
+    if (!config.LOG_LEVEL) {
+      validated.LOG_LEVEL = 'info';
+    }
+    if (blockers.length > 0) {
+      throw new Error(
+        `Environment validation failed (production): ${blockers.join('; ')}`,
+      );
+    }
+  }
+
   return validated;
 }

@@ -19,6 +19,8 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import {
   CreatePaymentDto,
   ListPaymentsDto,
+  RecordCashPaymentDto,
+  RejectCashPaymentDto,
   UpdatePaymentDto,
 } from './dto/payment.dto';
 import { PaymentsService } from './payments.service';
@@ -26,17 +28,43 @@ import { PaymentsService } from './payments.service';
 @ApiTags('payments')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.FARM_OWNER, UserRole.PLATFORM_OWNER)
+@Roles(UserRole.FARM_OWNER, UserRole.PLATFORM_OWNER, UserRole.DELIVERY_STAFF)
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
+  @Roles(UserRole.FARM_OWNER, UserRole.PLATFORM_OWNER)
   @Post()
   create(
     @CurrentUser() user: { id: string; role: UserRole },
     @Body() dto: CreatePaymentDto,
   ) {
     return this.paymentsService.create(user, dto);
+  }
+
+  @Post('cash')
+  recordCash(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Body() dto: RecordCashPaymentDto,
+  ) {
+    return this.paymentsService.recordCash(user, dto);
+  }
+
+  @Post(':id/confirm')
+  confirm(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.paymentsService.confirmCash(user, id);
+  }
+
+  @Post(':id/reject')
+  reject(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RejectCashPaymentDto,
+  ) {
+    return this.paymentsService.rejectCash(user, id, dto);
   }
 
   @Get()

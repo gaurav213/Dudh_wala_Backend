@@ -102,4 +102,35 @@ export class FarmServiceAreasService {
     await this.areasRepo.remove(area);
     return { success: true };
   }
+
+  async activate(
+    user: { id: string; role: UserRole },
+    farmId: string,
+    id: string,
+  ) {
+    return this.setStatus(user, farmId, id, ServiceAreaStatus.ACTIVE);
+  }
+
+  async deactivate(
+    user: { id: string; role: UserRole },
+    farmId: string,
+    id: string,
+  ) {
+    return this.setStatus(user, farmId, id, ServiceAreaStatus.INACTIVE);
+  }
+
+  private async setStatus(
+    user: { id: string; role: UserRole },
+    farmId: string,
+    id: string,
+    status: ServiceAreaStatus,
+  ) {
+    await this.farmsService.assertActiveOwner(user, farmId);
+    const area = assertFound(
+      await this.areasRepo.findOne({ where: { id, farmId } }),
+      'Service area not found',
+    );
+    area.status = status;
+    return this.areasRepo.save(area);
+  }
 }

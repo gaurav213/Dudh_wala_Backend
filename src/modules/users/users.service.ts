@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -9,6 +10,16 @@ import { Repository } from 'typeorm';
 import { UserRole, UserStatus } from '../../common/enums';
 import { normalizeMobileNumber } from '../../common/utils/mobile.util';
 import { User } from './entities/user.entity';
+
+function safeNormalizeMobile(mobileNumber: string): string {
+  try {
+    return normalizeMobileNumber(mobileNumber);
+  } catch (e) {
+    throw new BadRequestException(
+      e instanceof Error ? e.message : 'Invalid mobile number',
+    );
+  }
+}
 
 @Injectable()
 export class UsersService {
@@ -28,12 +39,12 @@ export class UsersService {
   }
 
   async findByMobile(mobileNumber: string): Promise<User | null> {
-    const normalized = normalizeMobileNumber(mobileNumber);
+    const normalized = safeNormalizeMobile(mobileNumber);
     return this.usersRepo.findOne({ where: { mobileNumber: normalized } });
   }
 
   async findByMobileWithPassword(mobileNumber: string): Promise<User | null> {
-    const normalized = normalizeMobileNumber(mobileNumber);
+    const normalized = safeNormalizeMobile(mobileNumber);
     return this.usersRepo
       .createQueryBuilder('user')
       .addSelect('user.passwordHash')
@@ -50,7 +61,7 @@ export class UsersService {
     timezone?: string;
     bcryptRounds: number;
   }): Promise<User> {
-    const mobileNumber = normalizeMobileNumber(params.mobileNumber);
+    const mobileNumber = safeNormalizeMobile(params.mobileNumber);
     const existing = await this.usersRepo.findOne({ where: { mobileNumber } });
     if (existing) {
       throw new ConflictException('Mobile number already registered');
@@ -73,7 +84,12 @@ export class UsersService {
 
   async updateProfile(
     userId: string,
-    data: Partial<Pick<User, 'name' | 'preferredLanguage' | 'timezone'>>,
+    data: Partial<
+      Pick<
+        User,
+        'name' | 'email' | 'preferredLanguage' | 'timezone' | 'avatarUrl'
+      >
+    >,
   ): Promise<User> {
     const user = await this.findByIdOrFail(userId);
     Object.assign(user, data);
@@ -102,6 +118,30 @@ export class UsersService {
 
   async touchLastLogin(userId: string): Promise<void> {
     await this.usersRepo.update(userId, { lastLoginAt: new Date() });
+  }
+
+  /**
+   * Soft-delete + anonymize PII so the mobile number can be re-registered.
+   * Business history (deliveries/bills) remains for the farm ledger.
+   */
+  async deleteAccount(userId: string): Promise<void> {
+    await this.findByIdOrFail(userId);
+    const tombstone = `deleted_${userId.replace(/-/g, '').slice(0, 16)}`;
+    const passwordHash = await bcrypt.hash(`deleted-${userId}-${Date.now()}`, 10);
+    await this.usersRepo
+      .createQueryBuilder()
+      .update(User)
+      .set({
+        status: UserStatus.INACTIVE,
+        name: 'Deleted user',
+        email: null,
+        avatarUrl: null,
+        mobileNumber: tombstone,
+        passwordHash,
+      })
+      .where('id = :id', { id: userId })
+      .execute();
+    await this.usersRepo.softDelete(userId);
   }
 
   toSafeUser(user: User) {

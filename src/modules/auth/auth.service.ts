@@ -12,6 +12,7 @@ import { Repository } from 'typeorm';
 import { UserRole, UserStatus } from '../../common/enums';
 import { AuditService } from '../audit/audit.service';
 import { FarmsService } from '../farms/farms.service';
+import { saveAvatarImage } from '../payments/utils/cash-proof-upload.util';
 import { SuppliersService } from '../suppliers/suppliers.service';
 import { RefreshToken } from '../users/entities/refresh-token.entity';
 import { UsersService } from '../users/users.service';
@@ -223,6 +224,7 @@ export class AuthService {
   async updateProfile(userId: string, dto: UpdateProfileDto) {
     const user = await this.usersService.updateProfile(userId, {
       name: dto.name,
+      email: dto.email,
       preferredLanguage: dto.preferredLanguage,
       timezone: dto.timezone,
     });
@@ -243,6 +245,12 @@ export class AuthService {
     };
   }
 
+  async updateAvatar(userId: string, file: Express.Multer.File) {
+    const avatarUrl = await saveAvatarImage(file);
+    const user = await this.usersService.updateProfile(userId, { avatarUrl });
+    return { user: this.usersService.toSafeUser(user) };
+  }
+
   async changePassword(userId: string, dto: ChangePasswordDto) {
     const rounds = this.configService.getOrThrow<number>('auth.bcryptRounds');
     await this.usersService.changePassword(
@@ -257,6 +265,22 @@ export class AuthService {
       entityType: 'USER',
       entityId: userId,
       action: 'PASSWORD_CHANGED',
+    });
+    return { success: true };
+  }
+
+  /**
+   * Soft-delete the authenticated user for App Store / Play account-deletion rules.
+   * Anonymizes mobile so the number can be re-registered; revokes all sessions.
+   */
+  async deleteAccount(userId: string) {
+    await this.logoutAll(userId);
+    await this.usersService.deleteAccount(userId);
+    await this.auditService.log({
+      actorUserId: userId,
+      entityType: 'USER',
+      entityId: userId,
+      action: 'ACCOUNT_DELETED',
     });
     return { success: true };
   }

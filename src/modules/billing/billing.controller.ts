@@ -19,6 +19,7 @@ import { BillingService } from './billing.service';
 import {
   GenerateBillDto,
   ListBillsDto,
+  OutstandingBillsDto,
   UpdateBillDto,
 } from './dto/billing.dto';
 
@@ -61,6 +62,15 @@ export class BillingController {
     @Param('month') month: string,
   ) {
     return this.billingService.findByCustomerMonth(user, customerId, month);
+  }
+
+  /** Must be registered before @Get(':id') so "outstanding" is not parsed as a UUID. */
+  @Get('outstanding')
+  outstanding(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Query() query: OutstandingBillsDto,
+  ) {
+    return this.billingService.outstanding(user, query);
   }
 
   @Get(':id')

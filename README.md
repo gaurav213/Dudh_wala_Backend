@@ -1,6 +1,7 @@
-# Doodh Khata Backend
+# Doodh Wala Backend (`doodh-khata-backend`)
 
-NestJS + PostgreSQL API for **Doodh Khata** — evolving from a single-supplier ledger into a multi-farm milk-delivery marketplace.
+NestJS + PostgreSQL API for **Doodh Wala** — multi-farm milk-delivery marketplace.
+Repository and package names remain `doodh-khata-*` for deployment continuity.
 
 - Base path: `/api/v1`
 - Swagger: `/api/docs`

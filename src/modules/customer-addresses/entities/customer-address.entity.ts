@@ -9,6 +9,8 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { AddressLocationSource } from '../../../common/enums';
+import { decimalTransformer } from '../../../common/transformers/decimal.transformer';
 import { User } from '../../users/entities/user.entity';
 
 @Entity('customer_addresses')
@@ -55,6 +57,41 @@ export class CustomerAddress {
 
   @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
   longitude!: string | null;
+
+  @Column({
+    name: 'location_source',
+    type: 'enum',
+    enum: AddressLocationSource,
+    nullable: true,
+  })
+  locationSource!: AddressLocationSource | null;
+
+  @Column({ name: 'location_verified', type: 'boolean', default: false })
+  locationVerified!: boolean;
+
+  @Column({
+    name: 'location_verified_by_user_id',
+    type: 'uuid',
+    nullable: true,
+  })
+  locationVerifiedByUserId!: string | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'location_verified_by_user_id' })
+  locationVerifiedByUser!: User | null;
+
+  @Column({ name: 'location_verified_at', type: 'timestamptz', nullable: true })
+  locationVerifiedAt!: Date | null;
+
+  @Column({
+    name: 'location_accuracy_meters',
+    type: 'numeric',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+    transformer: decimalTransformer,
+  })
+  locationAccuracyMeters!: string | null;
 
   @Column({ name: 'delivery_instructions', type: 'text', nullable: true })
   deliveryInstructions!: string | null;

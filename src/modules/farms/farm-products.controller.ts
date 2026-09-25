@@ -75,6 +75,24 @@ export class FarmProductsController {
     return this.farmProductsService.remove(user, farmId, id);
   }
 
+  @Post(':id/activate')
+  activate(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Param('farmId', ParseUUIDPipe) farmId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.farmProductsService.activate(user, farmId, id);
+  }
+
+  @Post(':id/deactivate')
+  deactivate(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Param('farmId', ParseUUIDPipe) farmId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.farmProductsService.deactivate(user, farmId, id);
+  }
+
   @Post(':id/change-rate')
   changeRate(
     @CurrentUser() user: { id: string; role: UserRole },

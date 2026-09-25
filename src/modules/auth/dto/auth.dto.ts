@@ -1,11 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
+  IsEmail,
   IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class RegisterSupplierDto {
@@ -178,6 +181,16 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(150)
   name?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() === '' ? null : value,
+  )
+  @ValidateIf((_, v) => v != null)
+  @IsEmail()
+  @MaxLength(150)
+  email?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

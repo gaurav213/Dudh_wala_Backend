@@ -2,13 +2,16 @@ import { ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsBoolean,
+  IsEnum,
   IsLatitude,
   IsLongitude,
   IsNotEmpty,
+  IsNumberString,
   IsOptional,
   IsString,
   MaxLength,
 } from 'class-validator';
+import { AddressLocationSource } from '../../../common/enums';
 
 export class CreateCustomerAddressDto {
   @ApiProperty()
@@ -63,6 +66,16 @@ export class CreateCustomerAddressDto {
   @IsLongitude()
   longitude?: string;
 
+  @ApiPropertyOptional({ enum: AddressLocationSource })
+  @IsOptional()
+  @IsEnum(AddressLocationSource)
+  locationSource?: AddressLocationSource;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumberString()
+  locationAccuracyMeters?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -77,3 +90,30 @@ export class CreateCustomerAddressDto {
 export class UpdateCustomerAddressDto extends PartialType(
   CreateCustomerAddressDto,
 ) {}
+
+export class UpdateAddressLocationDto {
+  @ApiProperty({ example: '18.5204000' })
+  @IsLatitude()
+  latitude!: string;
+
+  @ApiProperty({ example: '73.8567000' })
+  @IsLongitude()
+  longitude!: string;
+
+  @ApiPropertyOptional({ enum: AddressLocationSource })
+  @IsOptional()
+  @IsEnum(AddressLocationSource)
+  locationSource?: AddressLocationSource;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumberString()
+  locationAccuracyMeters?: string;
+
+  @ApiPropertyOptional({
+    description: 'When true, marks the pin as verified by the actor',
+  })
+  @IsOptional()
+  @IsBoolean()
+  markVerified?: boolean;
+}

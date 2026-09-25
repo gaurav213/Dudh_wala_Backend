@@ -14,6 +14,16 @@ export function roundQty(value: string | number | Decimal, places = 3): string {
   return new Decimal(value).toFixed(places);
 }
 
+/** UI/notification label: `1` or `0.5`, never `1.000`. */
+export function formatQtyDisplay(value: string | number | Decimal): string {
+  const n = new Decimal(value);
+  const tenths = n.mul(10).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).div(10);
+  if (tenths.equals(tenths.toDecimalPlaces(0))) {
+    return tenths.toFixed(0);
+  }
+  return tenths.toFixed(1);
+}
+
 export function calculateAmount(
   quantity: string | number,
   ratePerLitre: string | number,
@@ -73,5 +83,21 @@ export function calculateBillTotals(
     totalAmount,
     paidAmount,
     remainingBalance,
+  };
+}
+
+/** Net milk−payments: due stays ≥0; overpay becomes advance credit. */
+export function splitLedgerBalance(net: string | number | Decimal): {
+  outstandingBalance: string;
+  billTillToday: string;
+  advanceBalance: string;
+} {
+  const n = new Decimal(net);
+  const due = n.gt(0) ? n : new Decimal(0);
+  const advance = n.lt(0) ? n.abs() : new Decimal(0);
+  return {
+    outstandingBalance: roundMoney(due),
+    billTillToday: roundMoney(due),
+    advanceBalance: roundMoney(advance),
   };
 }

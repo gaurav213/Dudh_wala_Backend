@@ -8,6 +8,6 @@ export default new DataSource({
   entities: [__dirname + '/../**/*.entity{.ts,.js}'],
   migrations: [__dirname + '/migrations/*{.ts,.js}'],
   synchronize: false,
-  logging: true,
+  logging: process.env.NODE_ENV !== 'production',
   ssl: resolvePostgresSsl(process.env.DATABASE_URL, process.env.DATABASE_SSL),
 });

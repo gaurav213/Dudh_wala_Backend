@@ -9,7 +9,11 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { PaymentMethod } from '../../../common/enums';
+import {
+  CashPaymentPurpose,
+  PaymentMethod,
+  PaymentStatus,
+} from '../../../common/enums';
 import { decimalTransformer } from '../../../common/transformers/decimal.transformer';
 import { MonthlyBill } from '../../billing/entities/monthly-bill.entity';
 import { Customer } from '../../customers/entities/customer.entity';
@@ -18,12 +22,23 @@ import { User } from '../../users/entities/user.entity';
 @Entity('payments')
 @Index(['customerId', 'paymentDate'])
 @Index(['billId'])
+@Index(['status', 'paymentDate'])
 export class Payment {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Column({ name: 'supplier_id', type: 'uuid' })
   supplierId!: string;
+
+  @Column({ name: 'farm_id', type: 'uuid', nullable: true })
+  farmId!: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: CashPaymentPurpose,
+    nullable: true,
+  })
+  purpose!: CashPaymentPurpose | null;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'supplier_id' })
@@ -54,6 +69,14 @@ export class Payment {
   @Column({ name: 'payment_method', type: 'enum', enum: PaymentMethod })
   paymentMethod!: PaymentMethod;
 
+  @Column({
+    type: 'enum',
+    enum: PaymentStatus,
+    enumName: 'payment_status_enum',
+    default: PaymentStatus.CONFIRMED,
+  })
+  status!: PaymentStatus;
+
   @Column({ name: 'payment_date', type: 'date' })
   paymentDate!: string;
 
@@ -68,6 +91,14 @@ export class Payment {
   @Column({ type: 'text', nullable: true })
   notes!: string | null;
 
+  @Column({
+    name: 'proof_image_url',
+    type: 'varchar',
+    length: 500,
+    nullable: true,
+  })
+  proofImageUrl!: string | null;
+
   @Column({ name: 'client_reference_id', type: 'uuid', unique: true })
   clientReferenceId!: string;
 
@@ -80,6 +111,19 @@ export class Payment {
   @ManyToOne(() => User)
   @JoinColumn({ name: 'recorded_by_user_id' })
   recordedByUser!: User;
+
+  @Column({ name: 'confirmed_by_user_id', type: 'uuid', nullable: true })
+  confirmedByUserId!: string | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'confirmed_by_user_id' })
+  confirmedByUser!: User | null;
+
+  @Column({ name: 'confirmed_at', type: 'timestamptz', nullable: true })
+  confirmedAt!: Date | null;
+
+  @Column({ name: 'rejection_note', type: 'text', nullable: true })
+  rejectionNote!: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

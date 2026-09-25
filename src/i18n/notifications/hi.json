@@ -1,0 +1,134 @@
+{
+  "notifOutForDelivery": {
+    "title": "डिलीवरी के लिए निकला",
+    "body": "आपका दूध रास्ते में है।"
+  },
+  "notifMilkDelivered": {
+    "title": "दूध पहुँच गया",
+    "body": "{farm} से {qty} लीटर पहुँचाया गया। आज की राशि: ₹{amount}। पुष्टि के लिए टैप करें।"
+  },
+  "notifMilkShort": {
+    "title": "आज कम दूध",
+    "body": "{farm} से केवल {qty} लीटर (निर्धारित {expected} लीटर)। शुल्क ₹{amount}।"
+  },
+  "notifCustomerNoMilk": {
+    "title": "एक दिन दूध नहीं",
+    "body": "{name} {date} को दूध नहीं चाहते।"
+  },
+  "notifCustomerNoMilkToday": {
+    "title": "आज दूध नहीं",
+    "body": "{name} आज दूध नहीं चाहते।"
+  },
+  "notifCustomerWantsMilk": {
+    "title": "फिर दूध चाहिए",
+    "body": "{name} को {date} को फिर दूध चाहिए।"
+  },
+  "notifCustomerWantsMilkToday": {
+    "title": "आज दूध चाहिए",
+    "body": "{name} को आज फिर दूध चाहिए।"
+  },
+  "notifFarmNoDelivery": {
+    "title": "डिलीवरी नहीं",
+    "body": "आपका फार्म {date} को दूध नहीं दे रहा।"
+  },
+  "notifFarmNoDeliveryToday": {
+    "title": "आज डिलीवरी नहीं",
+    "body": "आपका फार्म आज दूध नहीं दे रहा।"
+  },
+  "notifCustomerConfirmed": {
+    "title": "डिलीवरी की पुष्टि",
+    "body": "ग्राहक ने दूध मिलने की पुष्टि की।"
+  },
+  "notifCustomerMarkedReceived": {
+    "title": "ग्राहक ने दूध मिला बताया",
+    "body": "ग्राहक ने आज का दूध मिला बताया।"
+  },
+  "notifIssueResolved": {
+    "title": "समस्या हल हुई",
+    "body": "{notes}"
+  },
+  "notifIssueReported": {
+    "title": "समस्या बताई गई",
+    "body": "{notes}"
+  },
+  "notifDeliveryEdited": {
+    "title": "डिलीवरी बदली",
+    "body": "{editor} ने {name} की डिलीवरी बदली।\nपहले: {prevQty} लीटर\nअब: {newQty} लीटर\nकारण: {reason}\nसमीक्षा के लिए टैप करें।"
+  },
+  "notifQuantityChanged": {
+    "title": "मात्रा बदली",
+    "body": "{name}: {prevQty} लीटर → {newQty} लीटर"
+  },
+  "notifExtraChanged": {
+    "title": "अतिरिक्त मात्रा बदली",
+    "body": "{name} स्टाफ अतिरिक्त: {prevQty} लीटर → {newQty} लीटर"
+  },
+  "notifAmountChanged": {
+    "title": "राशि बदली",
+    "body": "{name}: ₹{prevAmount} → ₹{newAmount}"
+  },
+  "notifEditConfirmed": {
+    "title": "बदलाव की पुष्टि",
+    "body": "{name} की डिलीवरी {prevQty} लीटर → {newQty} लीटर की पुष्टि फार्म मालिक ने की।"
+  },
+  "notifEditFlagged": {
+    "title": "बदलाव फ्लैग",
+    "body": "{name} की डिलीवरी {prevQty} लीटर → {newQty} लीटर समीक्षा के लिए फ्लैग की गई।"
+  },
+  "notifExtraRequested": {
+    "title": "अतिरिक्त दूध अनुरोध",
+    "body": "ग्राहक ने {date} के लिए +{qty} लीटर माँगा"
+  },
+  "notifExtraAccepted": {
+    "title": "अनुरोध स्वीकार",
+    "body": "आपका +{qty} लीटर अनुरोध स्वीकार हुआ।"
+  },
+  "notifExtraRejected": {
+    "title": "अनुरोध अस्वीकार",
+    "body": "आपका +{qty} लीटर अनुरोध अस्वीकार हुआ।"
+  },
+  "notifCashRecorded": {
+    "title": "नकद दर्ज",
+    "body": "₹{amount} नकद मिला ({purpose})।"
+  },
+  "notifCashToConfirm": {
+    "title": "नकद पुष्टि करें",
+    "body": "{name} ने ₹{amount} नकद बताया। फोटो देखकर पुष्टि करें।"
+  },
+  "notifCashConfirmed": {
+    "title": "नकद पुष्टि हुई",
+    "body": "₹{amount} नकद डिलीवरी स्टाफ ने पुष्टि की।"
+  },
+  "notifCashRejected": {
+    "title": "नकद अस्वीकार",
+    "body": "₹{amount} नकद दावा अस्वीकार हुआ।{notes}"
+  },
+  "notifRateUpdated": {
+    "title": "दूध दर अपडेट",
+    "body": "{farm} पर {product} अब ₹{newRate}/लीटर है (पहले ₹{previousRate}/लीटर)।"
+  },
+  "notifServiceRequestCreated": {
+    "title": "नया दूध अनुरोध",
+    "body": "{name} ने {qty} लीटर {product} माँगा"
+  },
+  "notifServiceRequestAccepted": {
+    "title": "अनुरोध स्वीकार",
+    "body": "{farm} ने आपका दूध अनुरोध स्वीकार किया।"
+  },
+  "notifServiceRequestCancelled": {
+    "title": "अनुरोध रद्द",
+    "body": "{name} ने {product} अनुरोध रद्द किया।"
+  },
+  "notifServiceRequestCancelledByFarm": {
+    "title": "अनुरोध रद्द",
+    "body": "{farm} ने आपका {product} अनुरोध रद्द किया।"
+  },
+  "notifReviewAdded": {
+    "title": "नई समीक्षा",
+    "body": "आपके डेयरी ने आपके लिए समीक्षा छोड़ी।"
+  },
+  "notifReviewReported": {
+    "title": "समीक्षा रिपोर्ट",
+    "body": "ग्राहक ने समीक्षा मॉडरेशन के लिए रिपोर्ट की।"
+  }
+}

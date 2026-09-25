@@ -18,13 +18,13 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { CustomerAddressesService } from './customer-addresses.service';
 import {
   CreateCustomerAddressDto,
+  UpdateAddressLocationDto,
   UpdateCustomerAddressDto,
 } from './dto/customer-address.dto';
 
 @ApiTags('customer-addresses')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.CUSTOMER)
 @Controller('customer-addresses')
 export class CustomerAddressesController {
   constructor(
@@ -32,6 +32,7 @@ export class CustomerAddressesController {
   ) {}
 
   @Post()
+  @Roles(UserRole.CUSTOMER)
   create(
     @CurrentUser('id') userId: string,
     @Body() dto: CreateCustomerAddressDto,
@@ -40,11 +41,13 @@ export class CustomerAddressesController {
   }
 
   @Get()
+  @Roles(UserRole.CUSTOMER)
   findAll(@CurrentUser('id') userId: string) {
     return this.customerAddressesService.findAll(userId);
   }
 
   @Patch(':id')
+  @Roles(UserRole.CUSTOMER)
   update(
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
@@ -54,6 +57,7 @@ export class CustomerAddressesController {
   }
 
   @Delete(':id')
+  @Roles(UserRole.CUSTOMER)
   remove(
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
@@ -62,10 +66,44 @@ export class CustomerAddressesController {
   }
 
   @Post(':id/set-default')
+  @Roles(UserRole.CUSTOMER)
   setDefault(
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.customerAddressesService.setDefault(userId, id);
+  }
+
+  @Patch(':id/location')
+  @Roles(
+    UserRole.CUSTOMER,
+    UserRole.FARM_OWNER,
+    UserRole.DELIVERY_STAFF,
+    UserRole.PLATFORM_OWNER,
+  )
+  updateLocation(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateAddressLocationDto,
+  ) {
+    return this.customerAddressesService.updateLocation(user, id, dto);
+  }
+
+  @Post(':id/confirm-location')
+  @Roles(UserRole.FARM_OWNER, UserRole.DELIVERY_STAFF, UserRole.PLATFORM_OWNER)
+  confirmLocation(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.customerAddressesService.confirmLocation(user, id);
+  }
+
+  @Post(':id/reset-verification')
+  @Roles(UserRole.FARM_OWNER, UserRole.PLATFORM_OWNER)
+  resetVerification(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.customerAddressesService.resetVerification(user, id);
   }
 }

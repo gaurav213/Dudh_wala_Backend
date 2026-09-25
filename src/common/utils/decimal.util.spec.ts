@@ -2,6 +2,7 @@ import {
   calculateAmount,
   calculateBillTotals,
   roundMoney,
+  splitLedgerBalance,
 } from './decimal.util';
 
 describe('decimal.util', () => {
@@ -42,6 +43,32 @@ describe('decimal.util', () => {
       expect(result.totalAmount).toBe('700.00');
       expect(result.remainingBalance).toBe('400.00');
       expect(roundMoney(result.previousBalance)).toBe('200.00');
+    });
+  });
+
+  describe('splitLedgerBalance', () => {
+    it('keeps due when milk exceeds payments', () => {
+      expect(splitLedgerBalance('55.00')).toEqual({
+        outstandingBalance: '55.00',
+        billTillToday: '55.00',
+        advanceBalance: '0.00',
+      });
+    });
+
+    it('moves overpayment into advance (walk-in paid 60 for 55 milk)', () => {
+      expect(splitLedgerBalance('-5.00')).toEqual({
+        outstandingBalance: '0.00',
+        billTillToday: '0.00',
+        advanceBalance: '5.00',
+      });
+    });
+
+    it('zeros both sides when settled', () => {
+      expect(splitLedgerBalance(0)).toEqual({
+        outstandingBalance: '0.00',
+        billTillToday: '0.00',
+        advanceBalance: '0.00',
+      });
     });
   });
 });

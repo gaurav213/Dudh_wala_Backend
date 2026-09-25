@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
   IsEnum,
   IsNotEmpty,
   IsOptional,
@@ -8,6 +11,8 @@ import {
 } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { FarmStatus } from '../../../common/enums';
+
+const LANGUAGE_CODE_MAX = 10;
 
 export class CreateFarmDto {
   @ApiProperty()
@@ -129,6 +134,18 @@ export class UpdateFarmDto {
   @IsString()
   @MaxLength(20)
   postalCode?: string;
+
+  @ApiPropertyOptional({
+    description: 'Spoken language codes (max 5), e.g. mr, hi, en',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5, { message: 'You can select up to 5 languages.' })
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(LANGUAGE_CODE_MAX, { each: true })
+  spokenLanguages?: string[];
 }
 
 export class ListFarmsDto extends PaginationDto {

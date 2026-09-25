@@ -98,6 +98,44 @@ export class ListDeliveriesDto extends PaginationDto {
   deliveryShift?: DeliveryShift;
 }
 
+/** Query for GET /deliveries/report (admin/farm console). */
+export class DeliveryReportDto extends PaginationDto {
+  @ApiPropertyOptional({ description: 'Alias of dateFrom' })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @ApiPropertyOptional({ description: 'Alias of dateTo' })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  dateTo?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  supplierId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
+
+  @ApiPropertyOptional({ enum: DeliveryStatus })
+  @IsOptional()
+  @IsEnum(DeliveryStatus)
+  status?: DeliveryStatus;
+}
+
 export class GenerateDailyListDto {
   @ApiProperty({ example: '2026-08-06' })
   @IsDateString()

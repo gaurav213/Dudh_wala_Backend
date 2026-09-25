@@ -3,8 +3,10 @@ import { planRateChange } from './milk-rate.util';
 describe('planRateChange', () => {
   it('creates an initial open period when none exists', () => {
     const plan = planRateChange(null, '55.00', '2026-08-01');
+    expect(plan.mode).toBe('open_new');
     expect(plan.closedPreviousId).toBeNull();
     expect(plan.closedEffectiveTo).toBeNull();
+    expect(plan.amendOpenId).toBeNull();
     expect(plan.newPeriod).toEqual({
       ratePerLitre: '55.00',
       effectiveFrom: '2026-08-01',
@@ -23,6 +25,7 @@ describe('planRateChange', () => {
       '55.00',
       '2026-08-01',
     );
+    expect(plan.mode).toBe('open_new');
     expect(plan.closedPreviousId).toBe('r1');
     expect(plan.closedEffectiveTo).toBe('2026-08-01');
     expect(plan.newPeriod).toEqual({
@@ -32,14 +35,30 @@ describe('planRateChange', () => {
     });
   });
 
-  it('rejects a new effective date on or before the current period start', () => {
+  it('amends the open period when effectiveFrom is the same day (market correction)', () => {
+    const plan = planRateChange(
+      {
+        id: 'r1',
+        ratePerLitre: '50.00',
+        effectiveFrom: '2026-08-01',
+        effectiveTo: null,
+      },
+      '55.00',
+      '2026-08-01',
+    );
+    expect(plan.mode).toBe('amend');
+    expect(plan.amendOpenId).toBe('r1');
+    expect(plan.closedPreviousId).toBeNull();
+    expect(plan.newPeriod.ratePerLitre).toBe('55.00');
+  });
+
+  it('rejects a new effective date before the current period start', () => {
     const openPeriod = {
       id: 'r1',
       ratePerLitre: '50.00',
       effectiveFrom: '2026-08-01',
       effectiveTo: null,
     };
-    expect(() => planRateChange(openPeriod, '55.00', '2026-08-01')).toThrow();
     expect(() => planRateChange(openPeriod, '55.00', '2026-07-15')).toThrow();
   });
 

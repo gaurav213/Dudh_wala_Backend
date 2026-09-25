@@ -1,0 +1,134 @@
+{
+  "notifOutForDelivery": {
+    "title": "Out for delivery",
+    "body": "Your milk is on the way."
+  },
+  "notifMilkDelivered": {
+    "title": "Milk delivered",
+    "body": "{qty} L was marked delivered from {farm}. Today's amount: ₹{amount}. Tap to confirm."
+  },
+  "notifMilkShort": {
+    "title": "Less milk today",
+    "body": "Only {qty} L delivered (scheduled {expected} L) from {farm}. Charged ₹{amount}."
+  },
+  "notifCustomerNoMilk": {
+    "title": "No milk for a day",
+    "body": "{name} does not want milk on {date}."
+  },
+  "notifCustomerNoMilkToday": {
+    "title": "No milk today",
+    "body": "{name} does not want milk today."
+  },
+  "notifCustomerWantsMilk": {
+    "title": "Wants milk again",
+    "body": "{name} wants milk on {date} again."
+  },
+  "notifCustomerWantsMilkToday": {
+    "title": "Wants milk today",
+    "body": "{name} wants milk today again."
+  },
+  "notifFarmNoDelivery": {
+    "title": "No delivery",
+    "body": "Your farm is not delivering milk on {date}."
+  },
+  "notifFarmNoDeliveryToday": {
+    "title": "No delivery today",
+    "body": "Your farm is not delivering milk today."
+  },
+  "notifCustomerConfirmed": {
+    "title": "Delivery confirmed",
+    "body": "Customer confirmed milk was received."
+  },
+  "notifCustomerMarkedReceived": {
+    "title": "Customer marked milk received",
+    "body": "Customer marked today's milk as received."
+  },
+  "notifIssueResolved": {
+    "title": "Delivery issue resolved",
+    "body": "{notes}"
+  },
+  "notifIssueReported": {
+    "title": "Delivery issue reported",
+    "body": "{notes}"
+  },
+  "notifDeliveryEdited": {
+    "title": "Delivery Edited",
+    "body": "{editor} edited {name}'s delivery.\nPreviously: {prevQty} L\nNow: {newQty} L\nReason: {reason}\nTap to review."
+  },
+  "notifQuantityChanged": {
+    "title": "Delivery Quantity Changed",
+    "body": "{name}: {prevQty} L → {newQty} L"
+  },
+  "notifExtraChanged": {
+    "title": "Extra Quantity Changed",
+    "body": "{name} staff extra: {prevQty} L → {newQty} L"
+  },
+  "notifAmountChanged": {
+    "title": "Delivery Amount Changed",
+    "body": "{name}: ₹{prevAmount} → ₹{newAmount}"
+  },
+  "notifEditConfirmed": {
+    "title": "Edit confirmed",
+    "body": "Your update for {name}'s delivery {prevQty} L → {newQty} L was confirmed by the Farm Owner."
+  },
+  "notifEditFlagged": {
+    "title": "Edit flagged",
+    "body": "Your update for {name}'s delivery {prevQty} L → {newQty} L was flagged for review by the Farm Owner."
+  },
+  "notifExtraRequested": {
+    "title": "Extra milk requested",
+    "body": "Customer requested +{qty} L for {date}"
+  },
+  "notifExtraAccepted": {
+    "title": "Extra request accepted",
+    "body": "Your +{qty} L request was accepted."
+  },
+  "notifExtraRejected": {
+    "title": "Extra request rejected",
+    "body": "Your +{qty} L request was rejected."
+  },
+  "notifCashRecorded": {
+    "title": "Cash payment recorded",
+    "body": "₹{amount} cash received ({purpose})."
+  },
+  "notifCashToConfirm": {
+    "title": "Cash to confirm",
+    "body": "{name} reported ₹{amount} cash. Review the photo and confirm."
+  },
+  "notifCashConfirmed": {
+    "title": "Cash payment confirmed",
+    "body": "₹{amount} cash was confirmed by delivery staff."
+  },
+  "notifCashRejected": {
+    "title": "Cash payment rejected",
+    "body": "₹{amount} cash claim was rejected.{notes}"
+  },
+  "notifRateUpdated": {
+    "title": "Milk rate updated",
+    "body": "{product} at {farm} is now ₹{newRate}/L (was ₹{previousRate}/L)."
+  },
+  "notifServiceRequestCreated": {
+    "title": "New milk request",
+    "body": "{name} requested {qty} L {product}"
+  },
+  "notifServiceRequestAccepted": {
+    "title": "Request accepted",
+    "body": "Your milk request has been accepted by {farm}."
+  },
+  "notifServiceRequestCancelled": {
+    "title": "Request cancelled",
+    "body": "{name} cancelled the {product} request."
+  },
+  "notifServiceRequestCancelledByFarm": {
+    "title": "Request cancelled",
+    "body": "{farm} cancelled your {product} request."
+  },
+  "notifReviewAdded": {
+    "title": "New review",
+    "body": "Your dairy left a review for you."
+  },
+  "notifReviewReported": {
+    "title": "Review reported",
+    "body": "A customer reported a review for moderation."
+  }
+}

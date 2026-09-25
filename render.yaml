@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: starter
     buildCommand: npm ci --registry=https://registry.npmjs.org && npm run build
-    startCommand: npm run migration:run && npm run start:prod
+    startCommand: npm run migration:run:prod && npm run start:prod
     healthCheckPath: /api/v1/health
     envVars:
       - key: NODE_ENV
@@ -29,12 +29,15 @@ services:
         value: 30d
       - key: BCRYPT_ROUNDS
         value: 12
+      # Set in Render dashboard to your real web origin(s), e.g. https://app.example.com
       - key: CORS_ORIGINS
         sync: false
       - key: DEFAULT_TIMEZONE
         value: Asia/Kolkata
       - key: LOG_LEVEL
         value: info
+      - key: AUTO_APPROVE_FARMS
+        value: "false"
 
 databases:
   - name: doodh-khata-db

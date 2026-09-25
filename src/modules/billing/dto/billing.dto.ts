@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsDateString,
   IsEnum,
   IsOptional,
   IsUUID,
@@ -55,8 +54,20 @@ export class ListBillsDto extends PaginationDto {
   @IsEnum(BillStatus)
   status?: BillStatus;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    example: '2026-08',
+    description: 'YYYY-MM or YYYY-MM-01',
+  })
   @IsOptional()
-  @IsDateString()
+  @Matches(/^\d{4}-\d{2}(-01)?$/)
   billingMonth?: string;
+}
+
+export class OutstandingBillsDto extends PaginationDto {
+  @ApiPropertyOptional({
+    description: 'Filter by farm owner user id (platform owners only)',
+  })
+  @IsOptional()
+  @IsUUID()
+  supplierId?: string;
 }

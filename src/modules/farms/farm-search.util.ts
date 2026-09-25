@@ -64,3 +64,44 @@ export function matchesProduct(
   }
   return true;
 }
+
+export type ServiceAreaMatchTier = 'EXACT_PIN' | 'AREA_CITY' | 'CITY' | 'NONE';
+
+/**
+ * Ranks a farm's active service areas against the requested location
+ * filters, preferring the most specific match: exact postal code, then
+ * area+city, then city alone.
+ */
+export function computeServiceAreaMatchTier(
+  areas: ServiceAreaLike[],
+  filters: SearchAreaFilters,
+): ServiceAreaMatchTier {
+  if (!filters.postalCode && !filters.area && !filters.city) return 'NONE';
+  const activeAreas = areas.filter(
+    (a) => a.status === ServiceAreaStatus.ACTIVE,
+  );
+  if (
+    filters.postalCode &&
+    activeAreas.some((a) =>
+      matchesServiceArea(a, { postalCode: filters.postalCode }),
+    )
+  ) {
+    return 'EXACT_PIN';
+  }
+  if (
+    filters.area &&
+    filters.city &&
+    activeAreas.some((a) =>
+      matchesServiceArea(a, { area: filters.area, city: filters.city }),
+    )
+  ) {
+    return 'AREA_CITY';
+  }
+  if (
+    filters.city &&
+    activeAreas.some((a) => matchesServiceArea(a, { city: filters.city }))
+  ) {
+    return 'CITY';
+  }
+  return 'NONE';
+}

@@ -16,6 +16,7 @@ import { UserRole } from '../../common/enums';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import {
+  AssignDeliveryPersonDto,
   CreateSubscriptionDto,
   ListSubscriptionsDto,
   UpdateSubscriptionDto,
@@ -52,6 +53,15 @@ export class SubscriptionsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.subscriptionsService.findOne(user, id);
+  }
+
+  @Post(':id/assign-delivery')
+  assignDelivery(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignDeliveryPersonDto,
+  ) {
+    return this.subscriptionsService.assignDeliveryPerson(user, id, dto);
   }
 
   @Patch(':id')

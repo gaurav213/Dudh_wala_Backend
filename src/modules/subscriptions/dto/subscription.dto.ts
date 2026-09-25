@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsUUID,
   Matches,
+  ValidateIf,
 } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import {
@@ -48,6 +49,19 @@ export class CreateSubscriptionDto {
 }
 
 export class UpdateSubscriptionDto extends PartialType(CreateSubscriptionDto) {}
+
+/** Assign (or clear) the delivery staff member for a subscription. */
+export class AssignDeliveryPersonDto {
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Active farm delivery-staff user id, or null to clear (farm owner self-delivers)',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== undefined)
+  @IsUUID()
+  assignedDeliveryUserId?: string | null;
+}
 
 export class ListSubscriptionsDto extends PaginationDto {
   @ApiPropertyOptional()

@@ -13,4 +13,8 @@ export default registerAs('app', () => ({
   logLevel: process.env.LOG_LEVEL || 'debug',
   autoApproveFarms:
     (process.env.AUTO_APPROVE_FARMS || 'false').toLowerCase() === 'true',
+  deliveryEditWindowMinutes: parseInt(
+    process.env.DELIVERY_EDIT_WINDOW_MINUTES || '60',
+    10,
+  ),
 }));

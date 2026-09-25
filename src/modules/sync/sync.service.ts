@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, MoreThan, Repository } from 'typeorm';
+import { DataSource, In, MoreThan, Repository } from 'typeorm';
 import { UserRole } from '../../common/enums';
 import { evaluateSyncOperation } from '../../common/utils/sync.util';
 import { getSupplierIdOrThrow } from '../../common/utils/ownership.util';
@@ -32,9 +32,32 @@ export class SyncService {
   ) {}
 
   async push(user: { id: string; role: UserRole }, dto: SyncPushDto) {
+    const operationIds = dto.operations.map((op) => op.operationId);
+    const duplicateOperationIds = operationIds.length
+      ? new Set(
+          (
+            await this.syncOpsRepo.find({
+              where: { operationId: In(operationIds) },
+              select: ['operationId'],
+            })
+          ).map((o) => o.operationId),
+        )
+      : new Set<string>();
+    // Mutable cache seeded with a batched pre-fetch: avoids a per-operation
+    // findOne, and is kept fresh as operations apply so a later op touching
+    // the same entity within this batch still sees the prior op's write.
+    const entityCache = await this.preloadEntities(dto.operations);
+
     const results = [];
     for (const op of dto.operations) {
-      results.push(await this.processOperation(user, op));
+      results.push(
+        await this.processOperation(
+          user,
+          op,
+          duplicateOperationIds,
+          entityCache,
+        ),
+      );
     }
     return { results };
   }
@@ -50,19 +73,18 @@ export class SyncService {
       take: 100,
     });
 
-    const entities = [];
-    for (const change of changes) {
-      const entity = await this.loadEntity(change.entityType, change.entityId);
-      entities.push({
-        changeId: change.id,
-        entityType: change.entityType,
-        entityId: change.entityId,
-        changeType: change.changeType,
-        entityVersion: change.entityVersion,
-        changedAt: change.changedAt,
-        entity,
-      });
-    }
+    const entityCache = await this.preloadEntities(changes);
+    const entities = changes.map((change) => ({
+      changeId: change.id,
+      entityType: change.entityType,
+      entityId: change.entityId,
+      changeType: change.changeType,
+      entityVersion: change.entityVersion,
+      changedAt: change.changedAt,
+      entity:
+        entityCache.get(this.entityKey(change.entityType, change.entityId)) ??
+        null,
+    }));
 
     const nextCursor =
       changes.length > 0 ? changes[changes.length - 1].id : String(cursor);
@@ -77,12 +99,12 @@ export class SyncService {
   private async processOperation(
     user: { id: string; role: UserRole },
     op: SyncPushOperationDto,
+    duplicateOperationIds: Set<string>,
+    entityCache: Map<string, any>,
   ) {
-    const existingOp = await this.syncOpsRepo.findOne({
-      where: { operationId: op.operationId },
-    });
-    if (existingOp) {
-      const entity = await this.loadEntity(op.entityType, op.entityId);
+    const key = this.entityKey(op.entityType, op.entityId);
+    if (duplicateOperationIds.has(op.operationId)) {
+      const entity = entityCache.get(key) ?? null;
       return {
         operationId: op.operationId,
         entityId: op.entityId,
@@ -93,7 +115,7 @@ export class SyncService {
       };
     }
 
-    const current = await this.loadEntity(op.entityType, op.entityId);
+    const current = entityCache.get(key) ?? null;
     const decision = evaluateSyncOperation({
       operationId: op.operationId,
       alreadyProcessed: false,
@@ -121,6 +143,7 @@ export class SyncService {
 
     try {
       const saved = await this.applyOperation(user, op, current);
+      entityCache.set(key, saved);
       await this.recordOp(user.id, op, 'APPLIED', null);
       return {
         operationId: op.operationId,
@@ -279,19 +302,43 @@ export class SyncService {
     });
   }
 
-  private async loadEntity(entityType: string, entityId: string) {
-    switch (entityType) {
-      case 'CUSTOMER':
-        return this.customersRepo.findOne({ where: { id: entityId } });
-      case 'SUBSCRIPTION':
-        return this.subsRepo.findOne({ where: { id: entityId } });
-      case 'DELIVERY':
-        return this.deliveriesRepo.findOne({ where: { id: entityId } });
-      case 'PAYMENT':
-        return this.paymentsRepo.findOne({ where: { id: entityId } });
-      default:
-        return null;
+  private entityKey(entityType: string, entityId: string) {
+    return `${entityType}:${entityId}`;
+  }
+
+  /** Batches the per-entityType lookups for a set of {entityType, entityId}
+   * items (sync operations or change-log rows) into one query per type,
+   * instead of a findOne per item. */
+  private async preloadEntities(
+    items: { entityType: string; entityId: string }[],
+  ): Promise<Map<string, any>> {
+    const idsByType: Record<string, Set<string>> = {
+      CUSTOMER: new Set(),
+      SUBSCRIPTION: new Set(),
+      DELIVERY: new Set(),
+      PAYMENT: new Set(),
+    };
+    for (const item of items) {
+      idsByType[item.entityType]?.add(item.entityId);
     }
+
+    const map = new Map<string, any>();
+    const loaders: Array<[string, Repository<any>, Set<string>]> = [
+      ['CUSTOMER', this.customersRepo, idsByType.CUSTOMER],
+      ['SUBSCRIPTION', this.subsRepo, idsByType.SUBSCRIPTION],
+      ['DELIVERY', this.deliveriesRepo, idsByType.DELIVERY],
+      ['PAYMENT', this.paymentsRepo, idsByType.PAYMENT],
+    ];
+    await Promise.all(
+      loaders.map(async ([entityType, repo, ids]) => {
+        if (!ids.size) return;
+        const rows = await repo.find({ where: { id: In([...ids]) } });
+        for (const row of rows) {
+          map.set(this.entityKey(entityType, row.id), row);
+        }
+      }),
+    );
+    return map;
   }
 
   private readVersion(entity: any): number | null {

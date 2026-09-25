@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Decimal } from 'decimal.js';
-import { Between, DataSource, Repository } from 'typeorm';
+import { Between, DataSource, In, Repository } from 'typeorm';
 import {
   BillItemType,
   BillStatus,
@@ -24,11 +24,14 @@ import {
   getSupplierIdOrThrow,
 } from '../../common/utils/ownership.util';
 import { AuditService } from '../audit/audit.service';
+import { Customer } from '../customers/entities/customer.entity';
 import { CustomersService } from '../customers/customers.service';
 import { MilkDelivery } from '../deliveries/entities/milk-delivery.entity';
+import { User } from '../users/entities/user.entity';
 import {
   GenerateBillDto,
   ListBillsDto,
+  OutstandingBillsDto,
   UpdateBillDto,
 } from './dto/billing.dto';
 import { MonthlyBillItem } from './entities/monthly-bill-item.entity';
@@ -60,10 +63,14 @@ export class BillingService {
     const billingMonth = this.normalizeBillingMonth(dto.billingMonth);
     const existing = await this.billsRepo.findOne({
       where: { customerId: customer.id, billingMonth },
+      relations: ['items'],
     });
-    if (existing) {
+    if (
+      existing &&
+      (existing.status === BillStatus.PAID || existing.status === BillStatus.VOID)
+    ) {
       throw new ConflictException(
-        'Bill already exists for this customer/month',
+        'Bill already closed for this customer/month',
       );
     }
 
@@ -89,44 +96,75 @@ export class BillingService {
         .toFixed(3);
       const uniqueDays = new Set(deliveries.map((d) => d.deliveryDate)).size;
 
-      const previousBalance = await this.computePreviousBalance(
-        customer.id,
-        billingMonth,
-        manager.getRepository(MonthlyBill),
-      );
+      const previousBalance = existing
+        ? existing.previousBalance
+        : await this.computePreviousBalance(
+            customer.id,
+            billingMonth,
+            manager.getRepository(MonthlyBill),
+          );
 
+      const paidAmount = existing?.paidAmount ?? '0.00';
       const totals = calculateBillTotals({
         milkAmount,
         previousBalance,
-        adjustment: dto.adjustment ?? '0.00',
-        discount: dto.discount ?? '0.00',
-        paidAmount: '0.00',
+        adjustment: dto.adjustment ?? existing?.adjustment ?? '0.00',
+        discount: dto.discount ?? existing?.discount ?? '0.00',
+        paidAmount,
       });
 
-      const bill = await manager.save(
-        manager.create(MonthlyBill, {
-          supplierId: customer.supplierId,
-          customerId: customer.id,
-          billingMonth,
-          totalDeliveryDays: uniqueDays,
-          totalQuantity,
-          milkAmount: totals.milkAmount,
-          previousBalance: totals.previousBalance,
-          discount: totals.discount,
-          adjustment: totals.adjustment,
-          totalAmount: totals.totalAmount,
-          paidAmount: totals.paidAmount,
-          remainingBalance: totals.remainingBalance,
-          status: BillStatus.DRAFT,
-          generatedAt: new Date(),
-        }),
-      );
+      const bill = existing
+        ? Object.assign(existing, {
+            totalDeliveryDays: uniqueDays,
+            totalQuantity,
+            milkAmount: totals.milkAmount,
+            previousBalance: totals.previousBalance,
+            discount: totals.discount,
+            adjustment: totals.adjustment,
+            totalAmount: totals.totalAmount,
+            paidAmount: totals.paidAmount,
+            remainingBalance: totals.remainingBalance,
+            status:
+              existing.status === BillStatus.DRAFT
+                ? BillStatus.ISSUED
+                : new Decimal(totals.remainingBalance).lte(0)
+                  ? BillStatus.PAID
+                  : new Decimal(totals.paidAmount).gt(0)
+                    ? BillStatus.PARTIALLY_PAID
+                    : BillStatus.ISSUED,
+            generatedAt: new Date(),
+            finalizedAt: existing.finalizedAt ?? new Date(),
+          })
+        : manager.create(MonthlyBill, {
+            supplierId: customer.supplierId,
+            customerId: customer.id,
+            billingMonth,
+            totalDeliveryDays: uniqueDays,
+            totalQuantity,
+            milkAmount: totals.milkAmount,
+            previousBalance: totals.previousBalance,
+            discount: totals.discount,
+            adjustment: totals.adjustment,
+            totalAmount: totals.totalAmount,
+            paidAmount: totals.paidAmount,
+            remainingBalance: totals.remainingBalance,
+            // Issued so the customer can see & pay anytime mid-month.
+            status: BillStatus.ISSUED,
+            generatedAt: new Date(),
+            finalizedAt: new Date(),
+          });
+
+      const savedBill = await manager.save(bill);
+
+      if (existing) {
+        await manager.delete(MonthlyBillItem, { billId: savedBill.id });
+      }
 
       const items: MonthlyBillItem[] = [];
       for (const d of deliveries) {
         items.push(
           manager.create(MonthlyBillItem, {
-            billId: bill.id,
+            billId: savedBill.id,
             deliveryId: d.id,
             itemDate: d.deliveryDate,
             description: `Milk delivery (${d.deliveryShift})`,
@@ -140,7 +178,7 @@ export class BillingService {
       if (new Decimal(totals.previousBalance).abs().gt(0)) {
         items.push(
           manager.create(MonthlyBillItem, {
-            billId: bill.id,
+            billId: savedBill.id,
             deliveryId: null,
             itemDate: billingMonth,
             description: 'Previous balance',
@@ -154,7 +192,7 @@ export class BillingService {
       if (new Decimal(totals.discount).abs().gt(0)) {
         items.push(
           manager.create(MonthlyBillItem, {
-            billId: bill.id,
+            billId: savedBill.id,
             deliveryId: null,
             itemDate: billingMonth,
             description: 'Discount',
@@ -168,7 +206,7 @@ export class BillingService {
       if (new Decimal(totals.adjustment).abs().gt(0)) {
         items.push(
           manager.create(MonthlyBillItem, {
-            billId: bill.id,
+            billId: savedBill.id,
             deliveryId: null,
             itemDate: billingMonth,
             description: 'Adjustment',
@@ -184,14 +222,15 @@ export class BillingService {
         actorUserId: user.id,
         supplierId: customer.supplierId,
         entityType: 'BILL',
-        entityId: bill.id,
-        action: 'BILL_GENERATED',
+        entityId: savedBill.id,
+        action: existing ? 'BILL_REFRESHED' : 'BILL_GENERATED',
         newValues: {
           billingMonth,
-          totalAmount: bill.totalAmount,
+          totalAmount: savedBill.totalAmount,
+          tillDate: true,
         },
       });
-      return { ...bill, items };
+      return { ...savedBill, items };
     });
   }
 
@@ -215,8 +254,126 @@ export class BillingService {
     }
     qb.orderBy('b.billing_month', query.sortOrder || 'DESC');
     qb.skip((query.page - 1) * query.limit).take(query.limit);
-    const [data, total] = await qb.getManyAndCount();
+    const [rows, total] = await qb.getManyAndCount();
+
+    const customerIds = [...new Set(rows.map((b) => b.customerId))];
+    const supplierIds = [...new Set(rows.map((b) => b.supplierId))];
+    const [customers, suppliers] = await Promise.all([
+      customerIds.length
+        ? this.billsRepo.manager.find(Customer, {
+            where: { id: In(customerIds) },
+          })
+        : Promise.resolve([] as Customer[]),
+      supplierIds.length
+        ? this.billsRepo.manager.find(User, {
+            where: { id: In(supplierIds) },
+          })
+        : Promise.resolve([] as User[]),
+    ]);
+    const customerNameById = new Map(customers.map((c) => [c.id, c.name]));
+    const supplierNameById = new Map(suppliers.map((s) => [s.id, s.name]));
+
+    const data = rows.map((b) => ({
+      id: b.id,
+      customerId: b.customerId,
+      customerName: customerNameById.get(b.customerId) ?? b.customerId,
+      supplierName: supplierNameById.get(b.supplierId) ?? b.supplierId,
+      periodStart: b.billingMonth,
+      periodEnd: this.endOfMonth(b.billingMonth),
+      amount: Number(b.totalAmount),
+      paidAmount: Number(b.paidAmount),
+      outstandingAmount: Number(b.remainingBalance),
+      status: b.status,
+      generatedAt: b.generatedAt ?? b.createdAt,
+      billingMonth: b.billingMonth,
+    }));
+
     return { data, meta: buildPageMeta(query.page, query.limit, total) };
+  }
+
+  async outstanding(
+    user: { id: string; role: UserRole },
+    query: OutstandingBillsDto,
+  ) {
+    let supplierId: string | undefined;
+    if (user.role === UserRole.PLATFORM_OWNER) {
+      supplierId = query.supplierId;
+    } else {
+      supplierId = getSupplierIdOrThrow(user);
+    }
+
+    const qb = this.billsRepo
+      .createQueryBuilder('b')
+      .where('b.remaining_balance > 0')
+      .andWhere('b.status NOT IN (:...statuses)', {
+        statuses: [BillStatus.VOID, BillStatus.PAID],
+      });
+    if (supplierId) {
+      qb.andWhere('b.supplier_id = :supplierId', { supplierId });
+    }
+
+    const bills = await qb.orderBy('b.billing_month', 'ASC').getMany();
+
+    type Agg = {
+      customerId: string;
+      supplierId: string;
+      outstandingAmount: number;
+      oldestDueDate: string;
+    };
+    const byCustomer = new Map<string, Agg>();
+    for (const bill of bills) {
+      const key = `${bill.supplierId}:${bill.customerId}`;
+      const existing = byCustomer.get(key);
+      const amount = Number(bill.remainingBalance);
+      if (!existing) {
+        byCustomer.set(key, {
+          customerId: bill.customerId,
+          supplierId: bill.supplierId,
+          outstandingAmount: amount,
+          oldestDueDate: bill.billingMonth,
+        });
+      } else {
+        existing.outstandingAmount += amount;
+        if (bill.billingMonth < existing.oldestDueDate) {
+          existing.oldestDueDate = bill.billingMonth;
+        }
+      }
+    }
+
+    const aggregated = [...byCustomer.values()].sort(
+      (a, b) => b.outstandingAmount - a.outstandingAmount,
+    );
+    const total = aggregated.length;
+    const page = query.page;
+    const limit = query.limit;
+    const slice = aggregated.slice((page - 1) * limit, page * limit);
+
+    const customerIds = [...new Set(slice.map((r) => r.customerId))];
+    const supplierIds = [...new Set(slice.map((r) => r.supplierId))];
+    const [customers, suppliers] = await Promise.all([
+      customerIds.length
+        ? this.billsRepo.manager.find(Customer, {
+            where: { id: In(customerIds) },
+          })
+        : Promise.resolve([] as Customer[]),
+      supplierIds.length
+        ? this.billsRepo.manager.find(User, {
+            where: { id: In(supplierIds) },
+          })
+        : Promise.resolve([] as User[]),
+    ]);
+    const customerNameById = new Map(customers.map((c) => [c.id, c.name]));
+    const supplierNameById = new Map(suppliers.map((s) => [s.id, s.name]));
+
+    const data = slice.map((row) => ({
+      customerId: row.customerId,
+      customerName: customerNameById.get(row.customerId) ?? row.customerId,
+      supplierName: supplierNameById.get(row.supplierId) ?? row.supplierId,
+      outstandingAmount: Number(row.outstandingAmount.toFixed(2)),
+      oldestDueDate: row.oldestDueDate,
+    }));
+
+    return { data, meta: buildPageMeta(page, limit, total) };
   }
 
   async findOne(user: { id: string; role: UserRole }, id: string) {

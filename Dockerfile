@@ -16,4 +16,7 @@ RUN npm ci --omit=dev --registry=https://registry.npmjs.org && npm cache clean -
 COPY --from=builder /app/dist ./dist
 USER app
 EXPOSE 3000
-CMD ["node", "dist/main.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --quiet --tries=1 --spider "http://localhost:${PORT:-3000}/api/v1/health" || exit 1
+# Migrations from compiled dist (no ts-node). Override CORS_ORIGINS / JWT_* at runtime.
+CMD ["sh", "-c", "node ./node_modules/typeorm/cli.js migration:run -d dist/database/typeorm.datasource.js && node dist/main.js"]

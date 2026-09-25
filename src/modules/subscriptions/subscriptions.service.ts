@@ -2,11 +2,19 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Decimal } from 'decimal.js';
-import { Repository } from 'typeorm';
-import { SubscriptionStatus, UserRole } from '../../common/enums';
+import { EntityManager, Repository } from 'typeorm';
+import {
+  DeliveryAssignmentStatus,
+  DeliveryStatus,
+  FarmMemberRole,
+  FarmMemberStatus,
+  SubscriptionStatus,
+  UserRole,
+} from '../../common/enums';
 import { roundMoney, roundQty } from '../../common/utils/decimal.util';
 import { buildPageMeta } from '../../common/utils/pagination.util';
 import {
@@ -16,8 +24,13 @@ import {
 } from '../../common/utils/ownership.util';
 import { hasActiveSubscriptionOverlap } from '../../common/utils/subscription-overlap.util';
 import { CustomersService } from '../customers/customers.service';
+import { MilkDelivery } from '../deliveries/entities/milk-delivery.entity';
+import { DeliveryAssignment } from '../farms/entities/delivery-assignment.entity';
+import { FarmMember } from '../farms/entities/farm-member.entity';
+import { Farm } from '../farms/entities/farm.entity';
 import { ChangeLog } from '../sync/entities/change-log.entity';
 import {
+  AssignDeliveryPersonDto,
   CreateSubscriptionDto,
   ListSubscriptionsDto,
   UpdateSubscriptionDto,
@@ -31,6 +44,10 @@ export class SubscriptionsService {
     private readonly subsRepo: Repository<MilkSubscription>,
     @InjectRepository(ChangeLog)
     private readonly changeLogRepo: Repository<ChangeLog>,
+    @InjectRepository(Farm)
+    private readonly farmsRepo: Repository<Farm>,
+    @InjectRepository(FarmMember)
+    private readonly membersRepo: Repository<FarmMember>,
     private readonly customersService: CustomersService,
   ) {}
 
@@ -75,7 +92,10 @@ export class SubscriptionsService {
       user.role === UserRole.PLATFORM_OWNER
         ? undefined
         : getSupplierIdOrThrow(user);
-    const qb = this.subsRepo.createQueryBuilder('s');
+    const qb = this.subsRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.customer', 'customer')
+      .leftJoinAndSelect('s.assignedDeliveryUser', 'assignee');
     if (supplierId) qb.andWhere('s.supplier_id = :supplierId', { supplierId });
     if (query.customerId)
       qb.andWhere('s.customer_id = :customerId', {
@@ -91,11 +111,128 @@ export class SubscriptionsService {
 
   async findOne(user: { id: string; role: UserRole }, id: string) {
     const sub = assertFound(
-      await this.subsRepo.findOne({ where: { id } }),
+      await this.subsRepo.findOne({
+        where: { id },
+        relations: ['customer', 'assignedDeliveryUser'],
+      }),
       'Subscription not found',
     );
     assertSupplierOwnership(user, sub.supplierId, 'subscription');
     return sub;
+  }
+
+  async assignDeliveryPerson(
+    user: { id: string; role: UserRole },
+    id: string,
+    dto: AssignDeliveryPersonDto,
+  ) {
+    const sub = await this.findOne(user, id);
+    const farmId = await this.resolveFarmId(sub);
+    const assigneeId =
+      dto.assignedDeliveryUserId === undefined
+        ? null
+        : dto.assignedDeliveryUserId;
+
+    if (assigneeId) {
+      await this.assertActiveDeliveryStaff(farmId, assigneeId);
+    }
+
+    return this.subsRepo.manager.transaction(async (manager) => {
+      return this.applyAssignment(manager, {
+        subscription: sub,
+        farmId,
+        assigneeUserId: assigneeId,
+        assignedByUserId: user.id,
+      });
+    });
+  }
+
+  /**
+   * Shared assignment write used by the public assign endpoint and by
+   * service-request accept (same transaction when a manager is provided).
+   */
+  async applyAssignment(
+    manager: EntityManager,
+    params: {
+      subscription: MilkSubscription;
+      farmId: string;
+      assigneeUserId: string | null;
+      assignedByUserId: string;
+    },
+  ) {
+    if (params.assigneeUserId) {
+      const member = await manager.getRepository(FarmMember).findOne({
+        where: {
+          farmId: params.farmId,
+          userId: params.assigneeUserId,
+          memberRole: FarmMemberRole.DELIVERY_STAFF,
+          status: FarmMemberStatus.ACTIVE,
+        },
+      });
+      if (!member) {
+        throw new BadRequestException(
+          'Assignee must be an active delivery staff member of this farm',
+        );
+      }
+    }
+
+    const subsRepo = manager.getRepository(MilkSubscription);
+    const assignmentsRepo = manager.getRepository(DeliveryAssignment);
+    const deliveriesRepo = manager.getRepository(MilkDelivery);
+
+    const sub = params.subscription;
+    sub.assignedDeliveryUserId = params.assigneeUserId;
+    sub.farmId = sub.farmId ?? params.farmId;
+    sub.version += 1;
+    const saved = await subsRepo.save(sub);
+
+    const prior = await assignmentsRepo.find({
+      where: {
+        subscriptionId: saved.id,
+        status: DeliveryAssignmentStatus.ACTIVE,
+      },
+    });
+    for (const row of prior) {
+      row.status = DeliveryAssignmentStatus.INACTIVE;
+    }
+    if (prior.length) await assignmentsRepo.save(prior);
+
+    if (params.assigneeUserId) {
+      await assignmentsRepo.save(
+        assignmentsRepo.create({
+          farmId: params.farmId,
+          subscriptionId: saved.id,
+          deliveryId: null,
+          assigneeUserId: params.assigneeUserId,
+          assignedByUserId: params.assignedByUserId,
+          status: DeliveryAssignmentStatus.ACTIVE,
+        }),
+      );
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    await deliveriesRepo
+      .createQueryBuilder()
+      .update(MilkDelivery)
+      .set({ assignedUserId: params.assigneeUserId })
+      .where('subscription_id = :subId', { subId: saved.id })
+      .andWhere('delivery_date = :today', { today })
+      .andWhere('status IN (:...statuses)', {
+        statuses: [DeliveryStatus.PENDING, DeliveryStatus.OUT_FOR_DELIVERY],
+      })
+      .execute();
+
+    await manager.getRepository(ChangeLog).save(
+      manager.getRepository(ChangeLog).create({
+        supplierId: saved.supplierId,
+        entityType: 'SUBSCRIPTION',
+        entityId: saved.id,
+        changeType: 'UPDATE',
+        entityVersion: saved.version,
+      }),
+    );
+
+    return saved;
   }
 
   async update(
@@ -162,6 +299,36 @@ export class SubscriptionsService {
 
   async cancel(user: { id: string; role: UserRole }, id: string) {
     return this.setStatus(user, id, SubscriptionStatus.CANCELLED);
+  }
+
+  private async resolveFarmId(sub: MilkSubscription): Promise<string> {
+    if (sub.farmId) return sub.farmId;
+    const farms = await this.farmsRepo.find({
+      where: { createdByUserId: sub.supplierId },
+      order: { createdAt: 'ASC' },
+      take: 1,
+    });
+    const farm = farms[0];
+    if (!farm) {
+      throw new NotFoundException('Farm not found for this subscription');
+    }
+    return farm.id;
+  }
+
+  private async assertActiveDeliveryStaff(farmId: string, userId: string) {
+    const member = await this.membersRepo.findOne({
+      where: {
+        farmId,
+        userId,
+        memberRole: FarmMemberRole.DELIVERY_STAFF,
+        status: FarmMemberStatus.ACTIVE,
+      },
+    });
+    if (!member) {
+      throw new BadRequestException(
+        'Assignee must be an active delivery staff member of this farm',
+      );
+    }
   }
 
   private async setStatus(

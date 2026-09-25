@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BillStatus, DeliveryStatus, UserRole } from '../../common/enums';
+import { todayIso } from '../../common/utils/date.util';
 import { getSupplierIdOrThrow } from '../../common/utils/ownership.util';
 import { MonthlyBill } from '../billing/entities/monthly-bill.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { MilkDelivery } from '../deliveries/entities/milk-delivery.entity';
+import { aggregateFarmTodayMetrics } from '../deliveries/utils/farm-today-metrics.util';
 import { Payment } from '../payments/entities/payment.entity';
 import { User } from '../users/entities/user.entity';
 
@@ -24,21 +26,82 @@ export class DashboardService {
     private readonly usersRepo: Repository<User>,
   ) {}
 
-  async supplierToday(user: { id: string; role: UserRole }) {
+  async farmToday(
+    user: { id: string; role: UserRole },
+    farmId?: string,
+    opts?: { date?: string; from?: string; to?: string },
+  ) {
     const supplierId = getSupplierIdOrThrow(user);
-    const today = this.todayInTz();
+    const today = todayIso();
+    let fromDate =
+      opts?.from && /^\d{4}-\d{2}-\d{2}$/.test(opts.from)
+        ? opts.from
+        : opts?.date && /^\d{4}-\d{2}-\d{2}$/.test(opts.date)
+          ? opts.date
+          : today;
+    let toDate =
+      opts?.to && /^\d{4}-\d{2}-\d{2}$/.test(opts.to) ? opts.to : fromDate;
+    if (fromDate > toDate) {
+      const swap = fromDate;
+      fromDate = toDate;
+      toDate = swap;
+    }
+
+    const qb = this.deliveriesRepo
+      .createQueryBuilder('d')
+      .where('d.supplier_id = :supplierId', { supplierId })
+      .andWhere('d.delivery_date >= :fromDate', { fromDate })
+      .andWhere('d.delivery_date <= :toDate', { toDate });
+    if (farmId) {
+      qb.andWhere('d.farm_id = :farmId', { farmId });
+    }
+    const rows = await qb.getMany();
+    const metrics = aggregateFarmTodayMetrics(rows);
+    const payments = await this.paymentsRepo
+      .createQueryBuilder('p')
+      .where('p.supplier_id = :supplierId', { supplierId })
+      .andWhere('p.payment_date >= :fromDate', { fromDate })
+      .andWhere('p.payment_date <= :toDate', { toDate })
+      .getMany();
+    const collectionsToday = payments
+      .reduce((a, p) => a + Number(p.amount), 0)
+      .toFixed(2);
+
+    return {
+      date: fromDate,
+      fromDate,
+      toDate,
+      ...metrics,
+      collectionsToday,
+      extraBreakdown: {
+        customerRequested: metrics.customerExtraQuantity,
+        staffAdded: metrics.staffExtraQuantity,
+        total: metrics.totalExtraQuantity,
+      },
+    };
+  }
+
+  async supplierToday(user: { id: string; role: UserRole }) {
+    const farmToday = await this.farmToday(user);
+    const supplierId = getSupplierIdOrThrow(user);
+    const today = farmToday.date;
     const rows = await this.deliveriesRepo.find({
       where: { supplierId, deliveryDate: today },
     });
     const summary = {
       date: today,
-      total: rows.length,
-      pending: rows.filter((r) => r.status === DeliveryStatus.PENDING).length,
-      delivered: rows.filter((r) => r.status === DeliveryStatus.DELIVERED)
-        .length,
-      skipped: rows.filter((r) => r.status === DeliveryStatus.SKIPPED).length,
+      total: farmToday.totalCount,
+      pending: farmToday.pendingCount,
+      delivered: farmToday.deliveredCount,
+      skipped: farmToday.skippedCount,
       cancelled: rows.filter((r) => r.status === DeliveryStatus.CANCELLED)
         .length,
+      scheduledQuantity: farmToday.scheduledQuantity,
+      customerExtraQuantity: farmToday.customerExtraQuantity,
+      staffExtraQuantity: farmToday.staffExtraQuantity,
+      totalExtraQuantity: farmToday.totalExtraQuantity,
+      totalDeliveredQuantity: farmToday.totalDeliveredQuantity,
+      editedDeliveryCount: farmToday.editedDeliveryCount,
     };
     return { summary, deliveries: rows };
   }
@@ -149,17 +212,8 @@ export class DashboardService {
     };
   }
 
-  private todayInTz(): string {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Kolkata',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date());
-  }
-
   private currentMonthStart(): string {
-    const today = this.todayInTz();
+    const today = todayIso();
     return `${today.slice(0, 7)}-01`;
   }
 

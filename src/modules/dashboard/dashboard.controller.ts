@@ -15,6 +15,18 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Roles(UserRole.FARM_OWNER)
+  @Get('farm/today')
+  farmToday(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Query('farmId') farmId?: string,
+    @Query('date') date?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.dashboardService.farmToday(user, farmId, { date, from, to });
+  }
+
+  @Roles(UserRole.FARM_OWNER)
   @Get('supplier/today')
   supplierToday(@CurrentUser() user: { id: string; role: UserRole }) {
     return this.dashboardService.supplierToday(user);

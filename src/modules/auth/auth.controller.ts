@@ -1,6 +1,18 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Patch,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { memoryStorage } from 'multer';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AuthService } from './auth.service';
@@ -82,11 +94,43 @@ export class AuthController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
+  @Post('profile/avatar')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['photo'],
+      properties: { photo: { type: 'string', format: 'binary' } },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('photo', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  updateAvatar(
+    @CurrentUser('id') userId: string,
+    @UploadedFile() photo: Express.Multer.File,
+  ) {
+    return this.authService.updateAvatar(userId, photo);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @Post('change-password')
   changePassword(
     @CurrentUser('id') userId: string,
     @Body() dto: ChangePasswordDto,
   ) {
     return this.authService.changePassword(userId, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Delete('account')
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  deleteAccount(@CurrentUser('id') userId: string) {
+    return this.authService.deleteAccount(userId);
   }
 }

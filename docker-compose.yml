@@ -27,19 +27,22 @@ services:
       db:
         condition: service_healthy
     environment:
-      NODE_ENV: production
+      # Local compose stays development so placeholder secrets are allowed.
+      # For a prod-like container, set NODE_ENV=production and strong JWT_* + CORS_ORIGINS.
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 3000
       API_PREFIX: api
       API_VERSION: 1
       DATABASE_URL: postgresql://postgres:postgres@db:5432/doodh_khata
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change_me_access}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change_me_refresh}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-local_dev_access_secret_min_32_chars!!}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-local_dev_refresh_secret_min_32_chars!}
       JWT_ACCESS_EXPIRES_IN: 15m
       JWT_REFRESH_EXPIRES_IN: 30d
       BCRYPT_ROUNDS: 12
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       DEFAULT_TIMEZONE: Asia/Kolkata
       LOG_LEVEL: info
+      AUTO_APPROVE_FARMS: ${AUTO_APPROVE_FARMS:-true}
     ports:
       - '3000:3000'
     healthcheck:

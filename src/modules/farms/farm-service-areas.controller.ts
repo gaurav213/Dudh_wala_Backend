@@ -64,4 +64,22 @@ export class FarmServiceAreasController {
   ) {
     return this.serviceAreasService.remove(user, farmId, id);
   }
+
+  @Post(':id/activate')
+  activate(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Param('farmId', ParseUUIDPipe) farmId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.serviceAreasService.activate(user, farmId, id);
+  }
+
+  @Post(':id/deactivate')
+  deactivate(
+    @CurrentUser() user: { id: string; role: UserRole },
+    @Param('farmId', ParseUUIDPipe) farmId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.serviceAreasService.deactivate(user, farmId, id);
+  }
 }

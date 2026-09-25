@@ -33,6 +33,10 @@ export class Farm {
   @Column({ type: 'text', nullable: true })
   description!: string | null;
 
+  /** ISO language codes the farm supports (max 5). e.g. ["mr","hi","en"] */
+  @Column({ name: 'spoken_languages', type: 'jsonb', default: () => "'[]'" })
+  spokenLanguages!: string[];
+
   @Index()
   @Column({ name: 'mobile_number', type: 'varchar', length: 20 })
   mobileNumber!: string;
@@ -91,6 +95,16 @@ export class Farm {
 
   @Column({ name: 'approved_at', type: 'timestamptz', nullable: true })
   approvedAt!: Date | null;
+
+  @Column({ name: 'deactivated_at', type: 'timestamptz', nullable: true })
+  deactivatedAt!: Date | null;
+
+  @Column({
+    name: 'deletion_requested_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  deletionRequestedAt!: Date | null;
 
   /**
    * Legacy link to the farm-owner user who originally registered.

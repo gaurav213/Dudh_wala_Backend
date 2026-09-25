@@ -61,10 +61,27 @@ export class SyncPushDto {
 }
 
 export class SyncPullQueryDto {
-  @ApiPropertyOptional({ default: 0 })
+  @ApiPropertyOptional({
+    default: 0,
+    description:
+      'Change-log cursor (preferred). Integer id from previous pull.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   cursor = 0;
+
+  /**
+   * Legacy mobile clients sent an ISO timestamp as `since`. Accept and ignore
+   * it so ValidationPipe forbidNonWhitelisted does not 400 the pull.
+   * Prefer `cursor` for incremental sync.
+   */
+  @ApiPropertyOptional({
+    description:
+      'Deprecated ISO timestamp from older mobile clients. Ignored; use cursor.',
+  })
+  @IsOptional()
+  @IsString()
+  since?: string;
 }
