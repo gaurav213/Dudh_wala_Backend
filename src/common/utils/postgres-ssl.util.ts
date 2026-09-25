@@ -27,7 +27,9 @@ export function resolvePostgresSsl(
     databaseUrl.includes('.ohio-postgres.render.com') ||
     databaseUrl.includes('.virginia-postgres.render.com');
 
-  if (isRender || databaseUrl.includes('sslmode=require')) {
+  const isNeon = databaseUrl.includes('neon.tech');
+
+  if (isRender || isNeon || databaseUrl.includes('sslmode=require')) {
     return { rejectUnauthorized: false };
   }
 

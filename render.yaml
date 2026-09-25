@@ -15,10 +15,11 @@ services:
         value: api
       - key: API_VERSION
         value: 1
+      # Paste Neon pooled DATABASE_URL in the Render dashboard (do not use Render Postgres).
       - key: DATABASE_URL
-        fromDatabase:
-          name: doodh-khata-db
-          property: connectionString
+        sync: false
+      - key: DATABASE_SSL
+        value: "true"
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
