@@ -176,9 +176,17 @@ export class AuthService {
     if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid refresh token');
     }
-    stored.revokedAt = new Date();
+    // Keep the same refresh token (slide expiry). Rotating it logs the
+    // client out if the response is lost (Render cold start / timeout).
+    stored.expiresAt = this.parseExpiry(
+      this.configService.getOrThrow<string>('auth.jwtRefreshExpiresIn'),
+    );
+    if (deviceId) stored.deviceId = deviceId;
     await this.refreshRepo.save(stored);
-    return this.issueTokens(stored.userId, stored.user.role, deviceId);
+    return {
+      accessToken: await this.signAccessToken(stored.userId, stored.user.role),
+      refreshToken,
+    };
   }
 
   async logout(refreshToken: string) {
@@ -285,13 +293,17 @@ export class AuthService {
     return { success: true };
   }
 
-  private async issueTokens(userId: string, role: UserRole, deviceId?: string) {
-    const accessToken = await this.jwtService.signAsync({ sub: userId, role }, {
+  private async signAccessToken(userId: string, role: UserRole) {
+    return this.jwtService.signAsync({ sub: userId, role }, {
       secret: this.configService.getOrThrow<string>('auth.jwtAccessSecret'),
       expiresIn: this.configService.getOrThrow<string>(
         'auth.jwtAccessExpiresIn',
       ),
     } as Parameters<JwtService['signAsync']>[1]);
+  }
+
+  private async issueTokens(userId: string, role: UserRole, deviceId?: string) {
+    const accessToken = await this.signAccessToken(userId, role);
     const refreshToken = randomBytes(48).toString('hex');
     const expiresIn = this.configService.getOrThrow<string>(
       'auth.jwtRefreshExpiresIn',

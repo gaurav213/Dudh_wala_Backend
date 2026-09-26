@@ -310,7 +310,7 @@ describe('AuthService', () => {
       expect(savedArg.tokenHash).not.toBe(result.refreshToken);
     });
 
-    it('rotates a valid refresh token: revokes the old one and issues a new pair', async () => {
+    it('slides a valid refresh token: keeps it, extends expiry, issues new access', async () => {
       const { service, refreshRepo } = makeService();
       const stored = {
         id: 'rt-1',
@@ -325,9 +325,10 @@ describe('AuthService', () => {
 
       const result = await service.refresh('some-refresh-token');
 
-      expect(stored.revokedAt).not.toBeNull();
+      expect(stored.revokedAt).toBeNull();
+      expect(result.refreshToken).toBe('some-refresh-token');
       expect(refreshRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'rt-1', revokedAt: expect.any(Date) }),
+        expect.objectContaining({ id: 'rt-1', revokedAt: null }),
       );
       expect(result.accessToken).toBe('signed.jwt.token');
     });
