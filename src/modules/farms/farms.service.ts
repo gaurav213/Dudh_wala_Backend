@@ -62,7 +62,7 @@ export class FarmsService {
   ) {}
 
   private autoApprove(): boolean {
-    return this.configService.get<boolean>('app.autoApproveFarms') === true;
+    return true;
   }
 
   async createFarmForOwner(

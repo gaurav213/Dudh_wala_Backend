@@ -38,7 +38,7 @@ services:
       - key: LOG_LEVEL
         value: info
       - key: AUTO_APPROVE_FARMS
-        value: "false"
+        value: "true"
 
 databases:
   - name: doodh-khata-db

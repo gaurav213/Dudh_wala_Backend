@@ -92,7 +92,7 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
-  AUTO_APPROVE_FARMS = 'false';
+  AUTO_APPROVE_FARMS = 'true';
 
   /** Minutes after deliveredAt during which delivery staff may edit. */
   @Transform(({ value }) => toInt(value, 60))
