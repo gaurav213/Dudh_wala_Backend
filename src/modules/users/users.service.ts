@@ -21,6 +21,11 @@ function safeNormalizeMobile(mobileNumber: string): string {
   }
 }
 
+/** Fits `users.mobile_number` varchar(20). */
+export function deletedMobileTombstone(userId: string): string {
+  return `d${userId.replace(/-/g, '').slice(0, 19)}`.slice(0, 20);
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -126,7 +131,7 @@ export class UsersService {
    */
   async deleteAccount(userId: string): Promise<void> {
     await this.findByIdOrFail(userId);
-    const tombstone = `deleted_${userId.replace(/-/g, '').slice(0, 16)}`;
+    const tombstone = deletedMobileTombstone(userId);
     const passwordHash = await bcrypt.hash(`deleted-${userId}-${Date.now()}`, 10);
     await this.usersRepo
       .createQueryBuilder()
@@ -141,7 +146,11 @@ export class UsersService {
       })
       .where('id = :id', { id: userId })
       .execute();
-    await this.usersRepo.softDelete(userId);
+    try {
+      await this.usersRepo.softDelete(userId);
+    } catch {
+      // PII already anonymized; hide-row is best-effort.
+    }
   }
 
   toSafeUser(user: User) {
