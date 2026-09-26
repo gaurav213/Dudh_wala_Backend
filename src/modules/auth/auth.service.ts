@@ -176,6 +176,11 @@ export class AuthService {
     if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+    if (!stored.user || stored.user.status !== UserStatus.ACTIVE) {
+      stored.revokedAt = new Date();
+      await this.refreshRepo.save(stored);
+      throw new UnauthorizedException('Invalid refresh token');
+    }
     // Keep the same refresh token (slide expiry). Rotating it logs the
     // client out if the response is lost (Render cold start / timeout).
     stored.expiresAt = this.parseExpiry(

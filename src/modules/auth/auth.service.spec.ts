@@ -349,6 +349,24 @@ describe('AuthService', () => {
       );
     });
 
+    it('revokes and rejects refresh when the user is not ACTIVE', async () => {
+      const { service, refreshRepo } = makeService();
+      const stored = {
+        id: 'rt-1',
+        userId: 'user-1',
+        tokenHash: 'stored-hash',
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        revokedAt: null as Date | null,
+        user: makeUser({ status: UserStatus.BLOCKED }),
+      };
+      refreshRepo.findOne.mockResolvedValue(stored);
+
+      await expect(service.refresh('blocked-user-token')).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(stored.revokedAt).not.toBeNull();
+    });
+
     it('rejects a refresh token that was already revoked', async () => {
       const { service, refreshRepo } = makeService();
       refreshRepo.findOne.mockResolvedValue({
