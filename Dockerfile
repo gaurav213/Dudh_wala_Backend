@@ -14,6 +14,8 @@ RUN addgroup -S app && adduser -S app -G app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --registry=https://registry.npmjs.org && npm cache clean --force
 COPY --from=builder /app/dist ./dist
+ENV UPLOADS_DIR=/app/uploads
+RUN mkdir -p /app/uploads && chown -R app:app /app/uploads
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

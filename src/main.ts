@@ -4,8 +4,8 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
-import { join } from 'path';
 import { AppModule } from './app.module';
+import { ensureUploadsRoot } from './modules/payments/utils/cash-proof-upload.util';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -14,7 +14,7 @@ async function bootstrap() {
   app.set('trust proxy', 1);
   const config = app.get(ConfigService);
 
-  app.useStaticAssets(join(process.cwd(), 'uploads'), {
+  app.useStaticAssets(await ensureUploadsRoot(), {
     prefix: '/uploads/',
   });
 
