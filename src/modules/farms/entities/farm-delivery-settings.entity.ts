@@ -5,6 +5,7 @@ import {
   JoinColumn,
   OneToOne,
   PrimaryColumn,
+  Repository,
   UpdateDateColumn,
 } from 'typeorm';
 import { Farm } from './farm.entity';
@@ -61,4 +62,15 @@ export class FarmDeliverySettings {
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt!: Date;
+}
+
+/** Parallel first loads race on this row; the losing insert must no-op, not 500. */
+export async function getOrCreateFarmDeliverySettings(
+  repo: Repository<FarmDeliverySettings>,
+  farmId: string,
+): Promise<FarmDeliverySettings> {
+  const settings = await repo.findOne({ where: { farmId } });
+  if (settings) return settings;
+  await repo.createQueryBuilder().insert().values({ farmId }).orIgnore().execute();
+  return repo.findOneOrFail({ where: { farmId } });
 }

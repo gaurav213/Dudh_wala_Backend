@@ -29,7 +29,10 @@ import { DeliveryExtraRequest } from '../deliveries/entities/delivery-extra-requ
 import { expectedQuantity } from '../deliveries/utils/delivery-quantity.util';
 import { UpdateFarmDeliverySettingsDto } from '../farms/dto/farm-delivery-settings.dto';
 import { DeliveryAssignment } from '../farms/entities/delivery-assignment.entity';
-import { FarmDeliverySettings } from '../farms/entities/farm-delivery-settings.entity';
+import {
+  FarmDeliverySettings,
+  getOrCreateFarmDeliverySettings,
+} from '../farms/entities/farm-delivery-settings.entity';
 import { FarmMember } from '../farms/entities/farm-member.entity';
 import { Farm } from '../farms/entities/farm.entity';
 import { Payment } from '../payments/entities/payment.entity';
@@ -770,16 +773,7 @@ export class DeliveryStaffService {
   }
 
   async getOrCreateSettings(farmId: string) {
-    const settings = await this.settingsRepo.findOne({ where: { farmId } });
-    if (settings) return settings;
-    // Parallel first loads race here; let the loser's insert no-op instead of a pkey error.
-    await this.settingsRepo
-      .createQueryBuilder()
-      .insert()
-      .values({ farmId })
-      .orIgnore()
-      .execute();
-    return this.settingsRepo.findOneOrFail({ where: { farmId } });
+    return getOrCreateFarmDeliverySettings(this.settingsRepo, farmId);
   }
 
   async getDeliverySettings(

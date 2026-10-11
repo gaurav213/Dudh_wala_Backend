@@ -35,7 +35,10 @@ import { AuditService } from '../audit/audit.service';
 import { CustomerAddress } from '../customer-addresses/entities/customer-address.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { DeliveryAssignment } from '../farms/entities/delivery-assignment.entity';
-import { FarmDeliverySettings } from '../farms/entities/farm-delivery-settings.entity';
+import {
+  FarmDeliverySettings,
+  getOrCreateFarmDeliverySettings,
+} from '../farms/entities/farm-delivery-settings.entity';
 import { FarmMember } from '../farms/entities/farm-member.entity';
 import { Farm } from '../farms/entities/farm.entity';
 import { FarmMilkProduct } from '../farms/entities/farm-milk-product.entity';
@@ -539,16 +542,8 @@ export class DeliveriesService {
     await this.farmDeliverySettingsRepo.save(settings);
   }
 
-  private async getOrCreateFarmDeliverySettings(farmId: string) {
-    let settings = await this.farmDeliverySettingsRepo.findOne({
-      where: { farmId },
-    });
-    if (!settings) {
-      settings = await this.farmDeliverySettingsRepo.save(
-        this.farmDeliverySettingsRepo.create({ farmId }),
-      );
-    }
-    return settings;
+  private getOrCreateFarmDeliverySettings(farmId: string) {
+    return getOrCreateFarmDeliverySettings(this.farmDeliverySettingsRepo, farmId);
   }
 
   private async assertCanViewFarmDailyList(
