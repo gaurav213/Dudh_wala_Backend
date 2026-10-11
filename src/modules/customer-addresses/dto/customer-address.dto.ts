@@ -9,6 +9,7 @@ import {
   IsNumberString,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
 } from 'class-validator';
 import { AddressLocationSource } from '../../../common/enums';
@@ -52,8 +53,7 @@ export class CreateCustomerAddressDto {
 
   @ApiProperty({ example: '411001' })
   @IsString()
-  @IsNotEmpty()
-  @MaxLength(20)
+  @Matches(/^\d{6}$/, { message: 'postalCode must be a 6-digit PIN code' })
   postalCode!: string;
 
   @ApiPropertyOptional()

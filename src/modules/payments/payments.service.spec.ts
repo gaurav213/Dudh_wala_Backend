@@ -250,10 +250,21 @@ describe('PaymentsService', () => {
   });
 
   describe('confirmCash', () => {
-    it('rejects confirming a payment that is not pending confirmation', async () => {
+    it('returns an already-confirmed payment unchanged on a repeat tap', async () => {
+      const { service, paymentsRepo } = makeService();
+      const payment = basePayment({ status: PaymentStatus.CONFIRMED });
+      paymentsRepo.findOne.mockResolvedValue(payment);
+
+      await expect(service.confirmCash(platformOwner, 'payment-1')).resolves.toBe(
+        payment,
+      );
+      expect(paymentsRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects confirming a rejected payment', async () => {
       const { service, paymentsRepo } = makeService();
       paymentsRepo.findOne.mockResolvedValue(
-        basePayment({ status: PaymentStatus.CONFIRMED }),
+        basePayment({ status: PaymentStatus.REJECTED }),
       );
 
       await expect(
@@ -261,35 +272,30 @@ describe('PaymentsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('recalculates the bill balance as an exact decimal sum of confirmed payments only', async () => {
+    it('refreshes the bill for the payment month when the payment is not linked to a bill', async () => {
       const { service, paymentsRepo, manager, billingService, customersRepo } =
         makeService();
       paymentsRepo.findOne.mockResolvedValue(
-        basePayment({
-          status: PaymentStatus.PENDING_CONFIRMATION,
-          billId: 'bill-1',
-        }),
+        basePayment({ status: PaymentStatus.PENDING_CONFIRMATION }),
       );
-      // Three confirmed payments that would drift under naive float addition
-      // (33.33 + 33.33 + 33.34) but must sum to an exact 100.00.
-      manager.find.mockResolvedValue([
-        { amount: '33.33' },
-        { amount: '33.33' },
-        { amount: '33.34' },
-      ]);
+      manager.findOne.mockResolvedValue({
+        id: 'bill-9',
+        customerId: 'customer-1',
+        billingMonth: '2026-09-01',
+      });
+      (billingService as any).paidTowardsBill = jest
+        .fn()
+        .mockResolvedValue('150.00');
       customersRepo.findOne.mockResolvedValue(null);
 
       await service.confirmCash(platformOwner, 'payment-1');
 
-      expect(manager.find).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          where: { billId: 'bill-1', status: PaymentStatus.CONFIRMED },
-        }),
-      );
+      expect(manager.findOne).toHaveBeenCalledWith(expect.anything(), {
+        where: { customerId: 'customer-1', billingMonth: '2026-09-01' },
+      });
       expect(billingService.recalculateBillPaidAmount).toHaveBeenCalledWith(
-        'bill-1',
-        '100.00',
+        'bill-9',
+        '150.00',
         manager,
       );
     });

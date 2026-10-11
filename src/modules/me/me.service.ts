@@ -7,6 +7,7 @@ import { PaginationDto } from '../../common/dto/pagination.dto';
 import { todayIso } from '../../common/utils/date.util';
 import { roundMoney, roundQty, splitLedgerBalance } from '../../common/utils/decimal.util';
 import { buildPageMeta } from '../../common/utils/pagination.util';
+import { carriedBalance } from '../../common/utils/ledger-carry.util';
 import { MonthlyBill } from '../billing/entities/monthly-bill.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { MilkDelivery } from '../deliveries/entities/milk-delivery.entity';
@@ -121,9 +122,11 @@ export class MeService {
       new Decimal(0),
     );
 
-    const previousBalance = await this.priorUnpaidRemaining(
+    const previousBalance = await carriedBalance(
+      this.deliveriesRepo,
+      this.paymentsRepo,
       customerIds,
-      `${today.slice(0, 7)}-01`,
+      monthStart,
     );
     const net = previousBalance.plus(milkCharges).minus(paymentsTotal);
     const ledger = splitLedgerBalance(net);
@@ -143,35 +146,6 @@ export class MeService {
       billTillToday: ledger.billTillToday,
       advanceBalance: ledger.advanceBalance,
     };
-  }
-
-  /** Unpaid remaining from prior months (same rule as bill generate carryover). */
-  private async priorUnpaidRemaining(
-    customerIds: string[],
-    /** First day of current month as YYYY-MM-01 (billing_month is a date column). */
-    currentMonthStart: string,
-  ): Promise<Decimal> {
-    let total = new Decimal(0);
-    for (const customerId of customerIds) {
-      const currentBill = await this.billsRepo.findOne({
-        where: { customerId, billingMonth: currentMonthStart },
-      });
-      if (currentBill) {
-        total = total.plus(currentBill.previousBalance || 0);
-        continue;
-      }
-      const previous = await this.billsRepo
-        .createQueryBuilder('b')
-        .where('b.customer_id = :customerId', { customerId })
-        .andWhere('b.billing_month < :currentMonthStart', {
-          currentMonthStart,
-        })
-        .andWhere('b.status != :void', { void: BillStatus.VOID })
-        .orderBy('b.billing_month', 'DESC')
-        .getOne();
-      if (previous) total = total.plus(previous.remainingBalance || 0);
-    }
-    return total;
   }
 
   async listBills(userId: string, query: PaginationDto) {

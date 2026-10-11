@@ -5,8 +5,8 @@ import { join } from 'path';
 import { saveCashProofImage, sniffImageExt } from './cash-proof-upload.util';
 
 describe('sniffImageExt', () => {
-  it('uses declared jpeg mime', () => {
-    expect(sniffImageExt('image/jpeg', Buffer.from([0x00]))).toBe('.jpg');
+  it('rejects non-image bytes declared as an image', () => {
+    expect(sniffImageExt('image/png', Buffer.from('not an image'))).toBeUndefined();
   });
 
   it('sniffs jpeg magic when mime is octet-stream', () => {

@@ -13,6 +13,7 @@ import {
 } from '../../common/enums';
 import { todayIso } from '../../common/utils/date.util';
 import { roundMoney, roundQty, splitLedgerBalance } from '../../common/utils/decimal.util';
+import { carriedBalance } from '../../common/utils/ledger-carry.util';
 import {
   formatDistanceLabel,
   haversineDistanceMeters,
@@ -424,13 +425,20 @@ export class DeliveryStaffService {
     );
 
     if (user.role === UserRole.DELIVERY_STAFF) {
-      const farmIds = await this.myFarmIds(user.id);
-      const fid = farmId ?? farmIds[0];
-      if (fid) {
-        const settings = await this.getOrCreateSettings(fid);
-        if (!settings.canViewBillingSummary) {
-          throw new ForbiddenException('Billing summary not permitted');
-        }
+      const farmIds = (await this.myFarmIds(user.id)).filter(
+        (id) => !farmId || id === farmId,
+      );
+      const farm = farmIds.length
+        ? await this.farmsRepo.findOne({
+            where: { id: In(farmIds), createdByUserId: customer.supplierId },
+          })
+        : null;
+      if (!farm) {
+        throw new ForbiddenException('Customer is not on your farm');
+      }
+      const settings = await this.getOrCreateSettings(farm.id);
+      if (!settings.canViewBillingSummary) {
+        throw new ForbiddenException('Billing summary not permitted');
       }
     } else if (
       user.role === UserRole.FARM_OWNER &&
@@ -496,7 +504,12 @@ export class DeliveryStaffService {
       new Decimal(0),
     );
 
-    const previousBalance = new Decimal(0); // prior month carry — simplified
+    const previousBalance = await carriedBalance(
+      this.deliveriesRepo,
+      this.paymentsRepo,
+      [customerId],
+      monthStart,
+    );
     const net = previousBalance.plus(milkCharges).minus(paymentsTotal);
     const ledger = splitLedgerBalance(net);
 
@@ -757,13 +770,16 @@ export class DeliveryStaffService {
   }
 
   async getOrCreateSettings(farmId: string) {
-    let settings = await this.settingsRepo.findOne({ where: { farmId } });
-    if (!settings) {
-      settings = await this.settingsRepo.save(
-        this.settingsRepo.create({ farmId }),
-      );
-    }
-    return settings;
+    const settings = await this.settingsRepo.findOne({ where: { farmId } });
+    if (settings) return settings;
+    // Parallel first loads race here; let the loser's insert no-op instead of a pkey error.
+    await this.settingsRepo
+      .createQueryBuilder()
+      .insert()
+      .values({ farmId })
+      .orIgnore()
+      .execute();
+    return this.settingsRepo.findOneOrFail({ where: { farmId } });
   }
 
   async getDeliverySettings(

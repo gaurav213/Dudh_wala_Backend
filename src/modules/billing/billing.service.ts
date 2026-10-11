@@ -5,13 +5,26 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Decimal } from 'decimal.js';
-import { Between, DataSource, In, Repository } from 'typeorm';
+import {
+  Between,
+  Brackets,
+  DataSource,
+  EntityManager,
+  EntitySubscriberInterface,
+  In,
+  InsertEvent,
+  Repository,
+  SoftRemoveEvent,
+  UpdateEvent,
+} from 'typeorm';
 import {
   BillItemType,
   BillStatus,
   DeliveryStatus,
+  PaymentStatus,
   UserRole,
 } from '../../common/enums';
+import { todayIso } from '../../common/utils/date.util';
 import {
   addMoney,
   calculateBillTotals,
@@ -27,6 +40,7 @@ import { AuditService } from '../audit/audit.service';
 import { Customer } from '../customers/entities/customer.entity';
 import { CustomersService } from '../customers/customers.service';
 import { MilkDelivery } from '../deliveries/entities/milk-delivery.entity';
+import { Payment } from '../payments/entities/payment.entity';
 import { User } from '../users/entities/user.entity';
 import {
   GenerateBillDto,
@@ -38,7 +52,9 @@ import { MonthlyBillItem } from './entities/monthly-bill-item.entity';
 import { MonthlyBill } from './entities/monthly-bill.entity';
 
 @Injectable()
-export class BillingService {
+export class BillingService
+  implements EntitySubscriberInterface<MilkDelivery>
+{
   constructor(
     @InjectRepository(MonthlyBill)
     private readonly billsRepo: Repository<MonthlyBill>,
@@ -50,7 +66,29 @@ export class BillingService {
     private readonly dataSource: DataSource,
     private readonly customersService: CustomersService,
     private readonly auditService: AuditService,
-  ) {}
+  ) {
+    // Every delivery write path (mark delivered, skip, edit, extras…) keeps its month's bill current.
+    dataSource.subscribers.push(this);
+  }
+
+  listenTo() {
+    return MilkDelivery;
+  }
+
+  afterInsert(event: InsertEvent<MilkDelivery>) {
+    return this.afterDeliveryChange(event.manager, event.entity);
+  }
+
+  afterUpdate(event: UpdateEvent<MilkDelivery>) {
+    return this.afterDeliveryChange(
+      event.manager,
+      (event.entity as MilkDelivery | undefined) ?? event.databaseEntity,
+    );
+  }
+
+  afterSoftRemove(event: SoftRemoveEvent<MilkDelivery>) {
+    return this.afterDeliveryChange(event.manager, event.entity ?? event.databaseEntity);
+  }
 
   normalizeBillingMonth(input: string): string {
     if (/^\d{4}-\d{2}$/.test(input)) return `${input}-01`;
@@ -65,19 +103,47 @@ export class BillingService {
       where: { customerId: customer.id, billingMonth },
       relations: ['items'],
     });
-    if (
-      existing &&
-      (existing.status === BillStatus.PAID || existing.status === BillStatus.VOID)
-    ) {
+    // A paid bill for the running month stays refreshable: later deliveries must still land on it.
+    const closedPaid =
+      existing?.status === BillStatus.PAID &&
+      billingMonth < `${todayIso().slice(0, 7)}-01`;
+    if (existing && (existing.status === BillStatus.VOID || closedPaid)) {
       throw new ConflictException(
         'Bill already closed for this customer/month',
       );
     }
 
+    return this.dataSource.transaction((manager) =>
+      this.rebuild(manager, customer, billingMonth, existing, dto, user.id),
+    );
+  }
+
+  /** Re-price an existing bill when one of its month's deliveries changes. */
+  async afterDeliveryChange(
+    manager: EntityManager,
+    delivery: Partial<MilkDelivery> | undefined,
+  ) {
+    if (!delivery?.customerId || !delivery.deliveryDate) return;
+    const billingMonth = `${String(delivery.deliveryDate).slice(0, 7)}-01`;
+    const existing = await manager.findOne(MonthlyBill, {
+      where: { customerId: delivery.customerId, billingMonth },
+    });
+    if (!existing || existing.status === BillStatus.VOID) return;
+    const customer = { id: existing.customerId, supplierId: existing.supplierId };
+    await this.rebuild(manager, customer, billingMonth, existing, {}, null);
+  }
+
+  private async rebuild(
+    manager: EntityManager,
+    customer: { id: string; supplierId: string },
+    billingMonth: string,
+    existing: MonthlyBill | null,
+    dto: { discount?: string; adjustment?: string },
+    actorUserId: string | null,
+  ) {
     const monthStart = billingMonth;
     const monthEnd = this.endOfMonth(billingMonth);
-
-    return this.dataSource.transaction(async (manager) => {
+    {
       const deliveries = await manager.find(MilkDelivery, {
         where: {
           customerId: customer.id,
@@ -104,7 +170,12 @@ export class BillingService {
             manager.getRepository(MonthlyBill),
           );
 
-      const paidAmount = existing?.paidAmount ?? '0.00';
+      const paidAmount = await this.paidTowardsBill(
+        manager,
+        customer.id,
+        billingMonth,
+        existing?.id,
+      );
       const totals = calculateBillTotals({
         milkAmount,
         previousBalance,
@@ -149,7 +220,11 @@ export class BillingService {
             paidAmount: totals.paidAmount,
             remainingBalance: totals.remainingBalance,
             // Issued so the customer can see & pay anytime mid-month.
-            status: BillStatus.ISSUED,
+            status: new Decimal(totals.paidAmount).gt(0)
+              ? new Decimal(totals.remainingBalance).lte(0)
+                ? BillStatus.PAID
+                : BillStatus.PARTIALLY_PAID
+              : BillStatus.ISSUED,
             generatedAt: new Date(),
             finalizedAt: new Date(),
           });
@@ -218,20 +293,22 @@ export class BillingService {
         );
       }
       await manager.save(items);
-      await this.auditService.log({
-        actorUserId: user.id,
-        supplierId: customer.supplierId,
-        entityType: 'BILL',
-        entityId: savedBill.id,
-        action: existing ? 'BILL_REFRESHED' : 'BILL_GENERATED',
-        newValues: {
-          billingMonth,
-          totalAmount: savedBill.totalAmount,
-          tillDate: true,
-        },
-      });
+      if (actorUserId) {
+        await this.auditService.log({
+          actorUserId,
+          supplierId: customer.supplierId,
+          entityType: 'BILL',
+          entityId: savedBill.id,
+          action: existing ? 'BILL_REFRESHED' : 'BILL_GENERATED',
+          newValues: {
+            billingMonth,
+            totalAmount: savedBill.totalAmount,
+            tillDate: true,
+          },
+        });
+      }
       return { ...savedBill, items };
-    });
+    }
   }
 
   async findAll(user: { id: string; role: UserRole }, query: ListBillsDto) {
@@ -484,6 +561,35 @@ export class BillingService {
       supplierId: bill.supplierId,
       generatedForPdf: true,
     };
+  }
+
+  /**
+   * Confirmed payments linked to the bill, plus unlinked ones dated in its month.
+   * Matches the live ledgers (customer summary, farm dashboard), which count every confirmed payment.
+   */
+  async paidTowardsBill(
+    manager: DataSource['manager'],
+    customerId: string,
+    billingMonth: string,
+    billId?: string,
+  ): Promise<string> {
+    const row = await manager
+      .getRepository(Payment)
+      .createQueryBuilder('p')
+      .select('COALESCE(SUM(p.amount), 0)', 'total')
+      .where('p.customer_id = :customerId', { customerId })
+      .andWhere('p.status = :status', { status: PaymentStatus.CONFIRMED })
+      .andWhere(
+        new Brackets((w) => {
+          w.where(
+            'p.bill_id IS NULL AND p.payment_date BETWEEN :start AND :end',
+            { start: billingMonth, end: this.endOfMonth(billingMonth) },
+          );
+          if (billId) w.orWhere('p.bill_id = :billId', { billId });
+        }),
+      )
+      .getRawOne<{ total: string }>();
+    return roundMoney(row?.total ?? '0');
   }
 
   async recalculateBillPaidAmount(

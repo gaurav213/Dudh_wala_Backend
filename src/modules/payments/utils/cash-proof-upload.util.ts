@@ -3,13 +3,6 @@ import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { BadRequestException } from '@nestjs/common';
 
-const ALLOWED_MIME: Record<string, string> = {
-  'image/jpeg': '.jpg',
-  'image/jpg': '.jpg',
-  'image/png': '.png',
-  'image/webp': '.webp',
-};
-
 const MAX_BYTES = 5 * 1024 * 1024;
 
 let resolvedRoot: string | undefined;
@@ -47,13 +40,11 @@ export async function ensureUploadsRoot(): Promise<string> {
   }
 }
 
-/** jpeg / png / webp from declared mime or magic bytes (Flutter often sends octet-stream). */
+/** jpeg / png / webp from magic bytes only; the declared mime is client-controlled. */
 export function sniffImageExt(
-  mimetype: string | undefined,
+  _mimetype: string | undefined,
   buffer: Buffer,
 ): string | undefined {
-  const declared = ALLOWED_MIME[(mimetype ?? '').toLowerCase()];
-  if (declared) return declared;
   if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
     return '.jpg';
   }

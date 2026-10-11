@@ -15,6 +15,7 @@ import {
   SubscriptionStatus,
   UserRole,
 } from '../../common/enums';
+import { todayIso } from '../../common/utils/date.util';
 import { roundMoney, roundQty } from '../../common/utils/decimal.util';
 import { buildPageMeta } from '../../common/utils/pagination.util';
 import {
@@ -210,7 +211,7 @@ export class SubscriptionsService {
       );
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIso();
     await deliveriesRepo
       .createQueryBuilder()
       .update(MilkDelivery)

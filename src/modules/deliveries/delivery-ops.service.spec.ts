@@ -167,13 +167,34 @@ describe('DeliveryOpsService', () => {
       expect(result.amount).toBe('90.00');
     });
 
-    it('rejects marking delivered a delivery that is already DELIVERED', async () => {
+    it('returns an already-DELIVERED delivery unchanged on a repeat tap', async () => {
       const { service, deliveriesRepo } = makeService();
-      const delivery = baseDelivery({ status: DeliveryStatus.DELIVERED });
+      const delivery = baseDelivery({
+        status: DeliveryStatus.DELIVERED,
+        finalDeliveredQuantity: '1.000',
+      });
       deliveriesRepo.findOne.mockResolvedValue(delivery);
 
       await expect(
-        service.markDelivered(platformOwner, delivery.id, {}),
+        service.markDelivered(platformOwner, delivery.id, {
+          finalDeliveredQuantity: '1',
+        }),
+      ).resolves.toBe(delivery);
+      expect(deliveriesRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects re-marking a DELIVERED delivery with a different quantity', async () => {
+      const { service, deliveriesRepo } = makeService();
+      const delivery = baseDelivery({
+        status: DeliveryStatus.DELIVERED,
+        finalDeliveredQuantity: '1.000',
+      });
+      deliveriesRepo.findOne.mockResolvedValue(delivery);
+
+      await expect(
+        service.markDelivered(platformOwner, delivery.id, {
+          finalDeliveredQuantity: '2',
+        }),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -468,6 +489,23 @@ describe('DeliveryOpsService', () => {
           finalDeliveredQuantity: '2.000',
         } as any),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('customerConfirm', () => {
+    it('refuses to turn a skipped delivery into a billed one', async () => {
+      const { service, deliveriesRepo } = makeService();
+      const delivery = baseDelivery({ status: DeliveryStatus.SKIPPED });
+      deliveriesRepo.findOne.mockResolvedValue(delivery);
+
+      await expect(
+        service.customerConfirm(
+          { id: 'customer-user-1', role: UserRole.CUSTOMER },
+          delivery.id,
+          {},
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(deliveriesRepo.save).not.toHaveBeenCalled();
     });
   });
 

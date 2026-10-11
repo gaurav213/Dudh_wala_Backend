@@ -23,6 +23,8 @@ import { FarmMember } from './entities/farm-member.entity';
 import { FarmMilkProduct } from './entities/farm-milk-product.entity';
 import { FarmServiceArea } from './entities/farm-service-area.entity';
 import { Farm } from './entities/farm.entity';
+import { FarmMedia } from './entities/farm-media.entity';
+import { isFarmProfileComplete } from './farm-onboarding.util';
 import { splitFarmBillRemainings } from './utils/farm-bill-remainings.util';
 import {
   startOfMonthIso,
@@ -194,6 +196,7 @@ export class FarmDashboardService {
       collectedInRange,
       collectedThisWeek,
       collectedThisMonth,
+      photoCount,
     ] = await Promise.all([
       this.membersRepo.count({
         where: {
@@ -240,21 +243,19 @@ export class FarmDashboardService {
       singleDay
         ? this.sumCollectedAmount(ownerId, monthStart, toDate)
         : Promise.resolve('0'),
+      this.farmsRepo.manager.count(FarmMedia, { where: { farmId: farm.id } }),
     ]);
 
     const toCollect = String(outstanding?.toCollect ?? '0');
     const advanceBalance = String(outstanding?.advanceBalance ?? '0');
-    const profileComplete = Boolean(
-      farm.businessName && farm.description && farm.email,
-    );
+    const profileComplete = isFarmProfileComplete(farm);
     const filledFields = [
       farm.businessName,
       farm.description,
-      farm.email,
       farm.latitude,
       farm.longitude,
     ].filter(Boolean).length;
-    const profileCompletionPercent = Math.round((filledFields / 5) * 100);
+    const profileCompletionPercent = Math.round((filledFields / 4) * 100);
 
     return {
       farm: {
@@ -299,6 +300,7 @@ export class FarmDashboardService {
         hasServiceArea: activeAreaCount > 0,
         hasProduct: availableProductCount > 0,
         hasStaff: staffCount > 0,
+        hasPhotos: photoCount > 0,
         profileComplete,
       },
     };

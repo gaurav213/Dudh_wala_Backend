@@ -6,13 +6,14 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Decimal } from 'decimal.js';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import {
   DeliveryAssignmentStatus,
   DeliveryConfirmationStatus,
   DeliveryEventType,
   DeliveryStatus,
+  ExtraRequestStatus,
   FarmMemberStatus,
   SubscriptionStatus,
   UserRole,
@@ -54,8 +55,15 @@ import {
   UpdateDeliveryDto,
 } from './dto/delivery.dto';
 import { DeliveryEvent } from './entities/delivery-event.entity';
+import { DeliveryExtraRequest } from './entities/delivery-extra-request.entity';
 import { MilkDelivery } from './entities/milk-delivery.entity';
 import { amountForQuantity } from './utils/delivery-quantity.util';
+
+function assertNotFutureDelivered(status: DeliveryStatus, deliveryDate: string) {
+  if (status === DeliveryStatus.DELIVERED && String(deliveryDate).slice(0, 10) > todayIso()) {
+    throw new BadRequestException('A future delivery cannot be marked delivered');
+  }
+}
 
 @Injectable()
 export class DeliveriesService {
@@ -97,6 +105,7 @@ export class DeliveriesService {
 
     const deliveryShift = dto.deliveryShift || subscription.deliveryShift;
     const status = dto.status || DeliveryStatus.PENDING;
+    assertNotFutureDelivered(status, dto.deliveryDate);
     const scheduled = roundQty(dto.quantity ?? subscription.defaultQuantity);
     const quantity = this.resolveQuantity(status, scheduled);
     let ratePerLitre = roundMoney(subscription.ratePerLitre);
@@ -373,6 +382,7 @@ export class DeliveriesService {
   ) {
     const delivery = await this.loadDeliveryForAccess(user, id);
     const status = dto.status ?? delivery.status;
+    assertNotFutureDelivered(status, delivery.deliveryDate);
     const quantity = this.resolveQuantity(
       status,
       dto.quantity ?? delivery.quantity,
@@ -584,6 +594,8 @@ export class DeliveriesService {
     const existingDeliveries = subIds.length
       ? await this.deliveriesRepo.find({
           where: { subscriptionId: In(subIds), deliveryDate: date },
+          // Soft-deleted rows still hold the (subscription, date, shift) unique slot.
+          withDeleted: true,
         })
       : [];
     const existingByKey = new Map(
@@ -617,6 +629,20 @@ export class DeliveriesService {
       products.map((p) => [p.id, p.currentRatePerLitre]),
     );
 
+    // Extras accepted before the row existed; accept() only patches rows that already exist.
+    const acceptedExtras = subIds.length
+      ? await this.deliveriesRepo.manager.find(DeliveryExtraRequest, {
+          where: {
+            subscriptionId: In(subIds),
+            deliveryDate: date,
+            status: ExtraRequestStatus.ACCEPTED,
+            deliveryId: IsNull(),
+          },
+          order: { reviewedAt: 'ASC' },
+        })
+      : [];
+    const extraBySub = new Map(acceptedExtras.map((e) => [e.subscriptionId, e]));
+
     for (const sub of subscriptions) {
       if (!isDeliveryRequiredOnDate(sub, date)) {
         skipped += 1;
@@ -625,12 +651,15 @@ export class DeliveriesService {
       const existing = existingByKey.get(`${sub.id}|${sub.deliveryShift}`);
       if (existing) {
         skipped += 1;
-        deliveries.push(existing);
+        if (!existing.deletedAt) deliveries.push(existing);
         continue;
       }
 
       const customer = customerById.get(sub.customerId);
       const scheduled = roundQty(sub.defaultQuantity);
+      const extraRequest = extraBySub.get(sub.id);
+      const customerExtra = roundQty(extraRequest?.requestedQuantity ?? 0);
+      const expected = roundQty(new Decimal(scheduled).plus(customerExtra).toString());
       // Market rate lives on the product; subscription rate is a fallback.
       const ratePerLitre = roundMoney(
         (sub.farmProductId && rateByProductId.get(sub.farmProductId)) ||
@@ -648,13 +677,13 @@ export class DeliveriesService {
           subscriptionId: sub.id,
           deliveryDate: date,
           deliveryShift: sub.deliveryShift,
-          quantity: scheduled,
+          quantity: expected,
           scheduledQuantity: scheduled,
-          customerExtraQuantity: roundQty(0),
+          customerExtraQuantity: customerExtra,
           staffExtraQuantity: roundQty(0),
           finalDeliveredQuantity: null,
           ratePerLitre,
-          amount: amountForQuantity(scheduled, ratePerLitre),
+          amount: amountForQuantity(expected, ratePerLitre),
           status: DeliveryStatus.PENDING,
           confirmationStatus: DeliveryConfirmationStatus.NOT_CONFIRMED,
           clientReferenceId: uuidv4(),
@@ -662,6 +691,10 @@ export class DeliveriesService {
           createdByUserId: user.id,
         }),
       );
+      if (extraRequest) {
+        extraRequest.deliveryId = delivery.id;
+        await this.deliveriesRepo.manager.save(extraRequest);
+      }
       await this.eventsRepo.save(
         this.eventsRepo.create({
           deliveryId: delivery.id,
@@ -669,7 +702,7 @@ export class DeliveriesService {
           actorUserId: user.id,
           actorRole: user.role,
           newStatus: delivery.status,
-          quantity: scheduled,
+          quantity: expected,
         }),
       );
       await this.writeChange(

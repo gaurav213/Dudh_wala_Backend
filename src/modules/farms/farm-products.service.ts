@@ -1,12 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, IsNull, Repository } from 'typeorm';
 import {
   DeliveryStatus,
   NotificationType,
+  ServiceRequestStatus,
   SubscriptionStatus,
   UserRole,
 } from '../../common/enums';
+import { CustomerServiceRequest } from '../service-requests/entities/customer-service-request.entity';
 import { roundMoney, roundQty } from '../../common/utils/decimal.util';
 import { assertFound } from '../../common/utils/ownership.util';
 import { Customer } from '../customers/entities/customer.entity';
@@ -26,10 +28,7 @@ import { FarmMilkProduct } from './entities/farm-milk-product.entity';
 import { MilkRateHistory } from './entities/milk-rate-history.entity';
 import { FarmsService } from './farms.service';
 import { planRateChange } from './milk-rate.util';
-
-function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayIso as todayDateString } from '../../common/utils/date.util';
 
 @Injectable()
 export class FarmProductsService {
@@ -144,6 +143,22 @@ export class FarmProductsService {
   ) {
     await this.farmsService.assertActiveOwner(user, farmId);
     const product = await this.findProductOrFail(farmId, id);
+    const manager = this.productsRepo.manager;
+    const inUse =
+      (await manager.exists(MilkSubscription, {
+        where: {
+          farmProductId: id,
+          status: In([SubscriptionStatus.ACTIVE, SubscriptionStatus.PAUSED]),
+        },
+      })) ||
+      (await manager.exists(CustomerServiceRequest, {
+        where: { productId: id, status: ServiceRequestStatus.PENDING },
+      }));
+    if (inUse) {
+      throw new ConflictException(
+        'Customers still use this product. Deactivate it instead of deleting.',
+      );
+    }
     await this.productsRepo.softRemove(product);
     return { success: true };
   }

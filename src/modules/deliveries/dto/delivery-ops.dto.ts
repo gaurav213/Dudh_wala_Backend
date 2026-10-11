@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsNumberString,
   IsOptional,
@@ -160,7 +161,8 @@ export class CreateExtraRequestDto {
   subscriptionId!: string;
 
   @ApiProperty({ example: '2026-08-07' })
-  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsDateString({ strict: true })
   deliveryDate!: string;
 
   @ApiProperty({ example: '0.500' })

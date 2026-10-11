@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -52,6 +53,16 @@ export class CustomerInvitationsService {
     if (!product) {
       throw new NotFoundException('Available product not found for this farm');
     }
+    const mobileNumber = normalizeMobileNumber(dto.mobileNumber);
+    if (
+      await this.invitationsRepo.exists({
+        where: { farmId, mobileNumber, status: InvitationStatus.PENDING },
+      })
+    ) {
+      throw new ConflictException(
+        'A pending invitation already exists for this mobile number',
+      );
+    }
 
     const expiresAt = new Date();
     expiresAt.setDate(
@@ -61,7 +72,7 @@ export class CustomerInvitationsService {
     return this.invitationsRepo.save(
       this.invitationsRepo.create({
         farmId,
-        mobileNumber: normalizeMobileNumber(dto.mobileNumber),
+        mobileNumber,
         customerName: dto.customerName ?? null,
         productId: dto.productId,
         quantity: roundQty(dto.quantity),

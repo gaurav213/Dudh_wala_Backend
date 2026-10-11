@@ -29,6 +29,7 @@ import { MonthlyBill } from '../billing/entities/monthly-bill.entity';
 import { CustomersService } from '../customers/customers.service';
 import { Customer } from '../customers/entities/customer.entity';
 import { FarmDeliverySettings } from '../farms/entities/farm-delivery-settings.entity';
+import { Farm } from '../farms/entities/farm.entity';
 import { FarmMember } from '../farms/entities/farm-member.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { MilkSubscription } from '../subscriptions/entities/milk-subscription.entity';
@@ -95,6 +96,22 @@ export class PaymentsService {
     if (user.role === UserRole.FARM_OWNER && customer.supplierId !== user.id) {
       throw new ForbiddenException();
     }
+    if (user.role === UserRole.DELIVERY_STAFF) {
+      const [member, farm] = await Promise.all([
+        this.membersRepo.findOne({
+          where: {
+            farmId: dto.farmId,
+            userId: user.id,
+            status: FarmMemberStatus.ACTIVE,
+          },
+        }),
+        this.dataSource.manager.findOne(Farm, { where: { id: dto.farmId } }),
+      ]);
+      if (!member || farm?.createdByUserId !== customer.supplierId) {
+        throw new ForbiddenException('Customer is not on your farm');
+      }
+    }
+    await this.assertBillBelongsTo(dto.billId, customer.id);
 
     if (new Decimal(dto.amount).lte(0)) {
       throw new BadRequestException('Payment amount must be > 0');
@@ -125,9 +142,7 @@ export class PaymentsService {
       }),
     );
 
-    if (dto.billId) {
-      await this.recalcBill(dto.billId, this.dataSource.manager);
-    }
+    await this.recalcBill(payment, this.dataSource.manager);
 
     const recipients = [customer.supplierId];
     if (customer.customerUserId) recipients.push(customer.customerUserId);
@@ -251,6 +266,9 @@ export class PaymentsService {
 
   async confirmCash(user: { id: string; role: UserRole }, id: string) {
     const payment = await this.getAccessiblePendingOrThrow(user, id);
+    if (payment.status === PaymentStatus.CONFIRMED) {
+      return payment;
+    }
     if (payment.status !== PaymentStatus.PENDING_CONFIRMATION) {
       throw new BadRequestException('Payment is not pending confirmation');
     }
@@ -262,9 +280,7 @@ export class PaymentsService {
     payment.version += 1;
     const saved = await this.paymentsRepo.save(payment);
 
-    if (saved.billId) {
-      await this.recalcBill(saved.billId, this.dataSource.manager);
-    }
+    await this.recalcBill(saved, this.dataSource.manager);
 
     const customer = await this.customersRepo.findOne({
       where: { id: saved.customerId },
@@ -435,9 +451,7 @@ export class PaymentsService {
         }),
       );
 
-      if (dto.billId) {
-        await this.recalcBill(dto.billId, manager);
-      }
+      await this.recalcBill(payment, manager);
 
       await manager.save(
         manager.create(ChangeLog, {
@@ -515,7 +529,7 @@ export class PaymentsService {
         'Payment not found',
       );
       assertSupplierOwnership(user, payment.supplierId, 'payment');
-      const oldBillId = payment.billId;
+      const before = { ...payment };
 
       if (dto.amount !== undefined) payment.amount = roundMoney(dto.amount);
       if (dto.paymentMethod !== undefined)
@@ -524,15 +538,16 @@ export class PaymentsService {
       if (dto.referenceNumber !== undefined)
         payment.referenceNumber = dto.referenceNumber ?? null;
       if (dto.notes !== undefined) payment.notes = dto.notes ?? null;
-      if (dto.billId !== undefined) payment.billId = dto.billId;
+      if (dto.billId !== undefined) {
+        await this.assertBillBelongsTo(dto.billId, payment.customerId);
+        payment.billId = dto.billId;
+      }
       payment.version += 1;
 
       const saved = await manager.save(payment);
 
-      if (oldBillId) await this.recalcBill(oldBillId, manager);
-      if (saved.billId && saved.billId !== oldBillId) {
-        await this.recalcBill(saved.billId, manager);
-      }
+      await this.recalcBill(before, manager);
+      await this.recalcBill(saved, manager);
 
       await manager.save(
         manager.create(ChangeLog, {
@@ -554,11 +569,10 @@ export class PaymentsService {
         'Payment not found',
       );
       assertSupplierOwnership(user, payment.supplierId, 'payment');
-      const billId = payment.billId;
       payment.version += 1;
       await manager.save(payment);
       await manager.softRemove(payment);
-      if (billId) await this.recalcBill(billId, manager);
+      await this.recalcBill(payment, manager);
       await manager.save(
         manager.create(ChangeLog, {
           supplierId: payment.supplierId,
@@ -618,18 +632,39 @@ export class PaymentsService {
     }
   }
 
-  private async recalcBill(billId: string, manager: DataSource['manager']) {
-    const payments = await manager.find(Payment, {
-      where: { billId, status: PaymentStatus.CONFIRMED },
+  private async assertBillBelongsTo(
+    billId: string | null | undefined,
+    customerId: string,
+  ) {
+    if (!billId) return;
+    const bill = await this.dataSource.manager.findOne(MonthlyBill, {
+      where: { id: billId },
     });
-    const paid = payments.reduce(
-      (acc, p) => acc.plus(new Decimal(p.amount)),
-      new Decimal(0),
-    );
-    await this.billingService.recalculateBillPaidAmount(
-      billId,
-      paid.toFixed(2),
+    if (bill?.customerId !== customerId) {
+      throw new BadRequestException('Bill does not belong to this customer');
+    }
+  }
+
+  /** Refresh the bill a payment counts toward: its linked bill, else that month's bill. */
+  private async recalcBill(
+    p: { billId: string | null; customerId: string; paymentDate: string },
+    manager: DataSource['manager'],
+  ) {
+    const bill = await manager.findOne(MonthlyBill, {
+      where: p.billId
+        ? { id: p.billId }
+        : {
+            customerId: p.customerId,
+            billingMonth: `${String(p.paymentDate).slice(0, 7)}-01`,
+          },
+    });
+    if (!bill) return;
+    const paid = await this.billingService.paidTowardsBill(
       manager,
+      bill.customerId,
+      bill.billingMonth,
+      bill.id,
     );
+    await this.billingService.recalculateBillPaidAmount(bill.id, paid, manager);
   }
 }

@@ -246,6 +246,14 @@ export class DeliveryOpsService {
   ) {
     const delivery = await this.getAccessibleDelivery(user, id);
     if (
+      delivery.status === DeliveryStatus.DELIVERED &&
+      (dto.finalDeliveredQuantity == null ||
+        roundQty(dto.finalDeliveredQuantity) ===
+          roundQty(delivery.finalDeliveredQuantity ?? delivery.quantity))
+    ) {
+      return delivery;
+    }
+    if (
       ![
         DeliveryStatus.PENDING,
         DeliveryStatus.OUT_FOR_DELIVERY,
@@ -253,6 +261,9 @@ export class DeliveryOpsService {
       ].includes(delivery.status)
     ) {
       throw new BadRequestException('Delivery cannot be marked delivered');
+    }
+    if (String(delivery.deliveryDate).slice(0, 10) > todayIso()) {
+      throw new BadRequestException('A future delivery cannot be marked delivered');
     }
     const finalQty = roundQty(
       dto.finalDeliveredQuantity ??
@@ -1112,6 +1123,13 @@ export class DeliveryOpsService {
       DeliveryConfirmationStatus.CUSTOMER_CONFIRMED
     ) {
       return delivery;
+    }
+    if (
+      delivery.status === DeliveryStatus.SKIPPED ||
+      delivery.status === DeliveryStatus.CANCELLED ||
+      delivery.status === DeliveryStatus.FAILED
+    ) {
+      throw new BadRequestException('Cannot confirm a closed non-delivery');
     }
     const previous = delivery.status;
     delivery.confirmationStatus = DeliveryConfirmationStatus.CUSTOMER_CONFIRMED;

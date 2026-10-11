@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Decimal } from 'decimal.js';
@@ -63,11 +64,15 @@ export class DeliveryExtraRequestsService {
       throw new BadRequestException('requestedQuantity must be > 0');
     }
     const sub = assertFound(
-      await this.subsRepo.findOne({ where: { id: dto.subscriptionId } }),
+      await this.subsRepo.findOne({
+        where: { id: dto.subscriptionId },
+        relations: ['customer'],
+      }),
       'Subscription not found',
     );
-    // Customer must own the linked customer user on subscription's customer row
-    // Resolved via delivery.customerUserId path after create; soft check via customer relation later.
+    if (sub.customer?.customerUserId !== user.id) {
+      throw new NotFoundException('Subscription not found');
+    }
     const farmId = sub.farmId;
     if (!farmId) {
       throw new BadRequestException('Subscription is not linked to a farm');
