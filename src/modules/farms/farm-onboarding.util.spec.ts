@@ -1,4 +1,7 @@
-import { isFarmProfileComplete } from './farm-onboarding.util';
+import {
+  farmProfileCompletionPercent,
+  isFarmProfileComplete,
+} from './farm-onboarding.util';
 
 describe('isFarmProfileComplete', () => {
   it('is complete without email when business name and description exist', () => {
@@ -17,5 +20,25 @@ describe('isFarmProfileComplete', () => {
         description: '  ',
       }),
     ).toBe(false);
+  });
+});
+
+describe('farmProfileCompletionPercent', () => {
+  it('is 100 when profile checklist fields are filled (ignores missing map pin)', () => {
+    expect(
+      farmProfileCompletionPercent({
+        businessName: 'test farm name',
+        description: 'A dairy',
+      }),
+    ).toBe(100);
+  });
+
+  it('is 50 when only one of business name / description is set', () => {
+    expect(
+      farmProfileCompletionPercent({
+        businessName: 'test farm name',
+        description: null,
+      }),
+    ).toBe(50);
   });
 });

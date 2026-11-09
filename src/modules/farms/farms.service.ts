@@ -390,24 +390,35 @@ export class FarmsService {
   async addMedia(
     user: { id: string; role: UserRole },
     farmId: string,
-    file: Express.Multer.File,
+    files: Express.Multer.File[],
   ) {
     await this.assertActiveOwner(user, farmId);
+    if (!files.length) {
+      throw new BadRequestException('Choose at least one photo');
+    }
     const count = await this.mediaRepo.count({ where: { farmId } });
-    if (count >= MAX_FARM_PHOTOS) {
+    const room = MAX_FARM_PHOTOS - count;
+    if (room <= 0) {
       throw new BadRequestException(
         `You can upload at most ${MAX_FARM_PHOTOS} photos`,
       );
     }
-    const url = await saveFarmMediaImage(file);
-    return this.mediaRepo.save(
-      this.mediaRepo.create({
-        farmId,
-        url,
-        sortOrder: count,
-        uploadedByUserId: user.id,
-      }),
-    );
+    const accepted = files.slice(0, room);
+    const saved = [];
+    for (let i = 0; i < accepted.length; i++) {
+      const url = await saveFarmMediaImage(accepted[i]);
+      saved.push(
+        await this.mediaRepo.save(
+          this.mediaRepo.create({
+            farmId,
+            url,
+            sortOrder: count + i,
+            uploadedByUserId: user.id,
+          }),
+        ),
+      );
+    }
+    return saved;
   }
 
   async deleteMedia(

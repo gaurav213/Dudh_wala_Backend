@@ -11,15 +11,18 @@ import {
   IsString,
   Matches,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import { DeliveryShift, MilkType } from '../../../common/enums';
 
 export class CreateFarmProductDto {
-  @ApiProperty()
+  /** Required only when milkType is OTHER; standard types get a default name. */
+  @ApiPropertyOptional()
+  @ValidateIf((o: CreateFarmProductDto) => o.milkType === MilkType.OTHER)
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
-  name!: string;
+  name?: string;
 
   @ApiProperty({ enum: MilkType })
   @IsEnum(MilkType)

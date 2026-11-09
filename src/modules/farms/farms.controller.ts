@@ -8,11 +8,11 @@ import {
   Patch,
   Post,
   Query,
-  UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -110,7 +110,7 @@ export class FarmsController {
     },
   })
   @UseInterceptors(
-    FileInterceptor('photo', {
+    FilesInterceptor('photo', 5, {
       storage: memoryStorage(),
       limits: { fileSize: 5 * 1024 * 1024 },
     }),
@@ -118,9 +118,9 @@ export class FarmsController {
   addMedia(
     @CurrentUser() user: { id: string; role: UserRole },
     @Param('id', ParseUUIDPipe) id: string,
-    @UploadedFile() photo: Express.Multer.File,
+    @UploadedFiles() photos: Express.Multer.File[],
   ) {
-    return this.farmsService.addMedia(user, id, photo);
+    return this.farmsService.addMedia(user, id, photos ?? []);
   }
 
   @Delete(':id/media/:mediaId')

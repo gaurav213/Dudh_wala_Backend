@@ -24,7 +24,10 @@ import { FarmMilkProduct } from './entities/farm-milk-product.entity';
 import { FarmServiceArea } from './entities/farm-service-area.entity';
 import { Farm } from './entities/farm.entity';
 import { FarmMedia } from './entities/farm-media.entity';
-import { isFarmProfileComplete } from './farm-onboarding.util';
+import {
+  farmProfileCompletionPercent,
+  isFarmProfileComplete,
+} from './farm-onboarding.util';
 import { splitFarmBillRemainings } from './utils/farm-bill-remainings.util';
 import {
   startOfMonthIso,
@@ -249,13 +252,7 @@ export class FarmDashboardService {
     const toCollect = String(outstanding?.toCollect ?? '0');
     const advanceBalance = String(outstanding?.advanceBalance ?? '0');
     const profileComplete = isFarmProfileComplete(farm);
-    const filledFields = [
-      farm.businessName,
-      farm.description,
-      farm.latitude,
-      farm.longitude,
-    ].filter(Boolean).length;
-    const profileCompletionPercent = Math.round((filledFields / 4) * 100);
+    const profileCompletionPercent = farmProfileCompletionPercent(farm);
 
     return {
       farm: {

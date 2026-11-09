@@ -19,7 +19,10 @@ import { FarmReview } from './entities/farm-review.entity';
 import { FarmServiceArea } from './entities/farm-service-area.entity';
 import { Farm } from './entities/farm.entity';
 import { MilkRateHistory } from './entities/milk-rate-history.entity';
-import { FarmDashboardService } from './farm-dashboard.service';
+import { DairySalesController } from './dairy-sales.controller';
+import { DairySalesService } from './dairy-sales.service';
+import { DairyPayment } from './entities/dairy-payment.entity';
+import { DairySlip } from './entities/dairy-slip.entity';
 import { FarmProductsController } from './farm-products.controller';
 import { FarmProductsService } from './farm-products.service';
 import { FarmServiceAreasController } from './farm-service-areas.controller';
@@ -33,12 +36,15 @@ import { FarmsController } from './farms.controller';
 import { FarmsSearchController } from './farms-search.controller';
 import { FarmsSearchService } from './farms-search.service';
 import { FarmsService } from './farms.service';
+import { FarmDashboardService } from './farm-dashboard.service';
 
 @Module({
   imports: [
     NotificationsModule,
     TypeOrmModule.forFeature([
       Farm,
+      DairySlip,
+      DairyPayment,
       FarmMember,
       FarmServiceArea,
       FarmMilkProduct,
@@ -65,6 +71,7 @@ import { FarmsService } from './farms.service';
     // FarmsSearchController must be registered before FarmsController so
     // "/farms/search" resolves before the "/farms/:id" wildcard route.
     FarmsSearchController,
+    DairySalesController,
     FarmsController,
     AdminFarmsController,
     FarmServiceAreasController,
@@ -73,6 +80,7 @@ import { FarmsService } from './farms.service';
   ],
   providers: [
     FarmsService,
+    DairySalesService,
     FarmServiceAreasService,
     FarmProductsService,
     FarmsSearchService,

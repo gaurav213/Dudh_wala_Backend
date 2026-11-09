@@ -1,8 +1,13 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, IsNull, Repository } from 'typeorm';
 import {
   DeliveryStatus,
+  MilkType,
   NotificationType,
   ServiceRequestStatus,
   SubscriptionStatus,
@@ -29,6 +34,28 @@ import { MilkRateHistory } from './entities/milk-rate-history.entity';
 import { FarmsService } from './farms.service';
 import { planRateChange } from './milk-rate.util';
 import { todayIso as todayDateString } from '../../common/utils/date.util';
+
+const STANDARD_MILK_TYPE_NAME: Record<Exclude<MilkType, MilkType.OTHER>, string> =
+  {
+    [MilkType.COW]: 'Cow',
+    [MilkType.BUFFALO]: 'Buffalo',
+    [MilkType.MIXED]: 'Mixed',
+    [MilkType.TONED]: 'Toned',
+  };
+
+function resolveProductName(
+  milkType: MilkType,
+  name: string | undefined,
+): string {
+  if (milkType === MilkType.OTHER) {
+    const trimmed = name?.trim() ?? '';
+    if (!trimmed) {
+      throw new BadRequestException('Name is required for OTHER milk type');
+    }
+    return trimmed;
+  }
+  return STANDARD_MILK_TYPE_NAME[milkType];
+}
 
 @Injectable()
 export class FarmProductsService {
@@ -60,7 +87,7 @@ export class FarmProductsService {
       const product = await manager.save(
         manager.create(FarmMilkProduct, {
           farmId,
-          name: dto.name,
+          name: resolveProductName(dto.milkType, dto.name),
           milkType: dto.milkType,
           description: dto.description ?? null,
           currentRatePerLitre: rate,
@@ -110,8 +137,16 @@ export class FarmProductsService {
   ) {
     await this.farmsService.assertActiveOwner(user, farmId);
     const product = await this.findProductOrFail(farmId, id);
+    const nextMilkType = dto.milkType ?? product.milkType;
+    const nextName =
+      dto.name !== undefined || dto.milkType !== undefined
+        ? resolveProductName(
+            nextMilkType,
+            dto.name !== undefined ? dto.name : product.name,
+          )
+        : product.name;
     Object.assign(product, {
-      ...(dto.name !== undefined ? { name: dto.name } : {}),
+      name: nextName,
       ...(dto.milkType !== undefined ? { milkType: dto.milkType } : {}),
       ...(dto.description !== undefined
         ? { description: dto.description ?? null }

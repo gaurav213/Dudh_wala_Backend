@@ -5,3 +5,14 @@ export function isFarmProfileComplete(farm: {
 }): boolean {
   return Boolean(farm.businessName?.trim() && farm.description?.trim());
 }
+
+/** Same fields as [isFarmProfileComplete] — not lat/lng map pins. */
+export function farmProfileCompletionPercent(farm: {
+  businessName?: string | null;
+  description?: string | null;
+}): number {
+  const filled = [farm.businessName, farm.description].filter((v) =>
+    Boolean(v?.trim()),
+  ).length;
+  return Math.round((filled / 2) * 100);
+}
