@@ -10,6 +10,7 @@ import { DataSource, In, Repository } from 'typeorm';
 import {
   ConnectionStatus,
   FarmMemberStatus,
+  MilkType,
   NotificationType,
   ReviewStatus,
   ServiceAreaStatus,
@@ -27,6 +28,7 @@ import { assertFound } from '../../common/utils/ownership.util';
 import { buildPageMeta } from '../../common/utils/pagination.util';
 import { AuditService } from '../audit/audit.service';
 import { ConnectionsService } from '../connections/connections.service';
+import { FarmCustomerConnection } from '../connections/entities/farm-customer-connection.entity';
 import { CustomerAddress } from '../customer-addresses/entities/customer-address.entity';
 import { FarmMilkProduct } from '../farms/entities/farm-milk-product.entity';
 import { FarmMember } from '../farms/entities/farm-member.entity';
@@ -345,9 +347,15 @@ export class ServiceRequestsService {
     if (request.customerUserId !== user.id) {
       throw new ForbiddenException('You do not own this request');
     }
-    if (request.status !== ServiceRequestStatus.PENDING) {
-      throw new BadRequestException('Only pending requests can be cancelled');
+    if (
+      request.status !== ServiceRequestStatus.PENDING &&
+      request.status !== ServiceRequestStatus.ACCEPTED
+    ) {
+      throw new BadRequestException(
+        'Only pending or accepted requests can be cancelled',
+      );
     }
+    const wasAccepted = request.status === ServiceRequestStatus.ACCEPTED;
     request.status = ServiceRequestStatus.CANCELLED;
     const saved = await this.requestsRepo.save(request);
 
@@ -356,6 +364,16 @@ export class ServiceRequestsService {
       this.farmsRepo.findOne({ where: { id: request.farmId } }),
       this.productsRepo.findOne({ where: { id: request.productId } }),
     ]);
+
+    if (wasAccepted) {
+      await this.endAcceptedRequestSideEffects({
+        farmId: request.farmId,
+        customerUserId: user.id,
+        productId: request.productId,
+        milkType: product?.milkType,
+      });
+    }
+
     if (farm) {
       const farmRecipients = await this.farmNotifyRecipients(
         request.farmId,
@@ -363,9 +381,15 @@ export class ServiceRequestsService {
       );
       await this.notifications.notify({
         type: NotificationType.SERVICE_REQUEST_CANCELLED,
-        title: 'Milk request cancelled',
-        body: `${customer?.name ?? 'A customer'} cancelled the ${product?.name ?? 'milk'} request.`,
-        messageKey: 'notifServiceRequestCancelled',
+        title: wasAccepted
+          ? 'Farm connection cancelled'
+          : 'Milk request cancelled',
+        body: wasAccepted
+          ? `${customer?.name ?? 'A customer'} cancelled their connection for ${product?.name ?? 'milk'}.`
+          : `${customer?.name ?? 'A customer'} cancelled the ${product?.name ?? 'milk'} request.`,
+        messageKey: wasAccepted
+          ? 'notifServiceConnectionCancelled'
+          : 'notifServiceRequestCancelled',
         params: {
           name: customer?.name ?? 'A customer',
           product: product?.name ?? 'milk',
@@ -376,7 +400,9 @@ export class ServiceRequestsService {
         entityType: 'SERVICE_REQUEST',
         entityId: saved.id,
         data: {
-          type: 'MILK_REQUEST_CANCELLED',
+          type: wasAccepted
+            ? 'MILK_CONNECTION_CANCELLED'
+            : 'MILK_REQUEST_CANCELLED',
           requestId: saved.id,
           farmId: request.farmId,
         },
@@ -384,6 +410,52 @@ export class ServiceRequestsService {
       });
     }
     return saved;
+  }
+
+  /** Cancel matching active subscription; close farm connection if none remain. */
+  private async endAcceptedRequestSideEffects(args: {
+    farmId: string;
+    customerUserId: string;
+    productId: string;
+    milkType?: string | null;
+  }) {
+    const ledgerCustomers = await this.customersRepo.find({
+      where: { customerUserId: args.customerUserId },
+    });
+    const ledgerIds = ledgerCustomers.map((c) => c.id);
+    if (ledgerIds.length && args.milkType) {
+      const activeSubs = await this.subscriptionsRepo.find({
+        where: {
+          customerId: In(ledgerIds),
+          farmId: args.farmId,
+          milkType: args.milkType as MilkType,
+          status: SubscriptionStatus.ACTIVE,
+        },
+      });
+      for (const sub of activeSubs) {
+        sub.status = SubscriptionStatus.CANCELLED;
+        sub.endDate = todayIso();
+        await this.subscriptionsRepo.save(sub);
+      }
+    }
+
+    const stillAccepted = await this.requestsRepo.exist({
+      where: {
+        farmId: args.farmId,
+        customerUserId: args.customerUserId,
+        status: ServiceRequestStatus.ACCEPTED,
+      },
+    });
+    if (stillAccepted) return;
+
+    await this.dataSource.getRepository(FarmCustomerConnection).update(
+      {
+        farmId: args.farmId,
+        customerUserId: args.customerUserId,
+        status: ConnectionStatus.ACTIVE,
+      },
+      { status: ConnectionStatus.CLOSED },
+    );
   }
 
   async listForFarm(
@@ -746,6 +818,11 @@ export class ServiceRequestsService {
         ...r,
         scheduleType,
         farmName: farm?.name ?? null,
+        // Contact only after the farm has accepted (privacy).
+        farmMobileNumber:
+          r.status === ServiceRequestStatus.ACCEPTED
+            ? (farm?.mobileNumber ?? null)
+            : null,
         productName: product?.name ?? null,
         milkType: product?.milkType ?? null,
         firstDeliveryDate: dates[0] ?? null,

@@ -78,13 +78,17 @@ export class FarmsSearchService {
         ...(await this.toSearchResult(farm, query, filters)),
         connection: connectionByFarm.get(farm.id) ?? {
           connected: false,
+          mobileNumber: null,
           products: [] as { name: string; milkType: string }[],
         },
       })),
     );
-    data.sort(
-      (a, b) => TIER_ORDER[a.serviceAreaMatch] - TIER_ORDER[b.serviceAreaMatch],
-    );
+    data.sort((a, b) => {
+      const connectedRank =
+        Number(b.connection.connected) - Number(a.connection.connected);
+      if (connectedRank !== 0) return connectedRank;
+      return TIER_ORDER[a.serviceAreaMatch] - TIER_ORDER[b.serviceAreaMatch];
+    });
 
     const meta: Record<string, unknown> = {
       ...buildPageMeta(query.page, query.limit, total),
@@ -103,7 +107,11 @@ export class FarmsSearchService {
   ) {
     const map = new Map<
       string,
-      { connected: boolean; products: { name: string; milkType: string }[] }
+      {
+        connected: boolean;
+        mobileNumber: string | null;
+        products: { name: string; milkType: string }[];
+      }
     >();
     if (!user || user.role !== UserRole.CUSTOMER || !farmIds.length) {
       return map;
@@ -116,6 +124,14 @@ export class FarmsSearchService {
       },
     });
     if (!connections.length) return map;
+
+    const connectedFarms = await this.farmsRepo.find({
+      where: { id: In(connections.map((c) => c.farmId)) },
+      select: ['id', 'mobileNumber'],
+    });
+    const mobileByFarm = new Map(
+      connectedFarms.map((f) => [f.id, f.mobileNumber ?? null]),
+    );
 
     const ledgerCustomers = await this.customersRepo.find({
       where: { customerUserId: user.id },
@@ -157,6 +173,7 @@ export class FarmsSearchService {
     for (const c of connections) {
       map.set(c.farmId, {
         connected: true,
+        mobileNumber: mobileByFarm.get(c.farmId) ?? null,
         products: productsByFarm.get(c.farmId) ?? [],
       });
     }
