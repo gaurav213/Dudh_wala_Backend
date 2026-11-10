@@ -1939,6 +1939,41 @@ export class DeliveryOpsService {
         createdByUserId: editor.id,
       });
     }
+
+    // Customer must hear about litre/amount corrections for that day.
+    if (
+      delivery.customerUserId &&
+      (change.previousQuantity !== change.newQuantity ||
+        change.previousAmount !== change.newAmount)
+    ) {
+      const farmLabel = await this.farmName(delivery.farmId);
+      const customerRoute = `/customer/deliveries/${delivery.id}`;
+      await this.notifications.notify({
+        type: NotificationType.DELIVERY_QUANTITY_CHANGED,
+        title: 'Delivery updated',
+        body: `${farmLabel} corrected today's milk: ${formatQtyDisplay(change.previousQuantity)} L → ${formatQtyDisplay(change.newQuantity)} L (₹${change.newAmount}).`,
+        messageKey: 'notifCustomerDeliveryCorrected',
+        params: {
+          farm: farmLabel,
+          prevQty: formatQtyDisplay(change.previousQuantity),
+          newQty: formatQtyDisplay(change.newQuantity),
+          amount: change.newAmount,
+        },
+        recipientUserIds: [delivery.customerUserId],
+        route: customerRoute,
+        farmId: delivery.farmId,
+        entityType: 'DELIVERY',
+        entityId: delivery.id,
+        data: {
+          notificationType: NotificationType.DELIVERY_QUANTITY_CHANGED,
+          farmId: delivery.farmId,
+          customerId: delivery.customerId,
+          deliveryId: delivery.id,
+          route: customerRoute,
+        },
+        createdByUserId: editor.id,
+      });
+    }
   }
 
   private async farmName(farmId: string | null) {

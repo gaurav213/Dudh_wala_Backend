@@ -473,6 +473,12 @@ describe('DeliveryOpsService', () => {
       );
       expect(history.id).toBe('hist-1');
       expect(notifications.notify).toHaveBeenCalled();
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messageKey: 'notifCustomerDeliveryCorrected',
+          recipientUserIds: ['customer-user-1'],
+        }),
+      );
     });
 
     it('blocks editing a delivery already on a finalized bill', async () => {
